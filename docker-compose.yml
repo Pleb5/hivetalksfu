@@ -1,0 +1,32 @@
+name: hivetalk-vanilla
+
+services:
+    hivetalk:
+        image: budabit/hivetalk-vanilla:${HIVETALK_IMAGE_TAG:?set HIVETALK_IMAGE_TAG}
+        pull_policy: never
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: runtime
+            args:
+                VCS_REF: ${HIVETALK_REVISION:?set HIVETALK_REVISION}
+        restart: unless-stopped
+        init: true
+        read_only: true
+        network_mode: host
+        tmpfs:
+            - /tmp:size=64m,mode=1777
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        environment:
+            API_KEY_SECRET: ${API_KEY_SECRET:?set API_KEY_SECRET}
+            HIVETALK_REVISION: ${HIVETALK_REVISION:?set HIVETALK_REVISION}
+            JWT_KEY: ${JWT_KEY:?set JWT_KEY}
+        stop_grace_period: 30s
+        logging:
+            driver: json-file
+            options:
+                max-size: 10m
+                max-file: '3'

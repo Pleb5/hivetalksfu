@@ -1,52 +1,44 @@
 'use strict';
 
-const os = require('os');
+const IPv4 = '116.203.126.94';
+const numWorkers = 2;
 
-// https://api.ipify.org
-
-function getIPv4() {
-    const ifaces = os.networkInterfaces();
-    for (const interfaceName in ifaces) {
-        const iface = ifaces[interfaceName];
-        for (const { address, family, internal } of iface) {
-            if (family === 'IPv4' && !internal) {
-                return address;
-            }
-        }
-    }
-    return '0.0.0.0'; // Default to 0.0.0.0 if no external IPv4 address found
+function requiredEnv(name) {
+    const value = process.env[name];
+    if (!value) throw new Error(`Missing required environment variable: ${name}`);
+    return value;
 }
 
-const IPv4 = getIPv4(); // Replace it with the Server Public IPv4 in production.
-
-const numWorkers = require('os').cpus().length;
+function requiredRevision() {
+    const revision = requiredEnv('HIVETALK_REVISION');
+    if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error('HIVETALK_REVISION must be a full Git commit SHA');
+    return revision;
+}
 
 module.exports = {
+    deployment: {
+        revision: requiredRevision(),
+    },
     console: {
         /*
             timeZone: Time Zone corresponding to timezone identifiers from the IANA Time Zone Database es 'Europe/Rome' default UTC
         */
         timeZone: 'UTC',
-        debug: true,
-        colors: true,
+        debug: false,
+        colors: false,
     },
     server: {
         listen: {
             // app listen on
-            ip: '0.0.0.0',
-            port: process.env.PORT || 3010,
-        },
-        ssl: {
-            // ssl/README.md
-            cert: '../ssl/cert.pem',
-            key: '../ssl/key.pem',
+            ip: '127.0.0.1',
+            port: 3010,
         },
         cors: {
             /* 
                 origin: Allow specified origin es ['https://example.com', 'https://subdomain.example.com', 'http://localhost:3010'] or all origins if not specified
                 methods: Allow only GET and POST methods
             */
-            origin: '*',
+            origin: ['https://calls.budabit.club'],
             methods: ['GET', 'POST'],
         },
         recording: {
@@ -86,18 +78,18 @@ module.exports = {
                 - Logs: npm run npm-logs - View the logs of the RTMP server.
             */
             enabled: false,
-            fromFile: true,
-            fromUrl: true,
-            fromStream: true,
-            maxStreams: 1,
-            server: 'rtmp://localhost:1935',
-            appName: 'mirotalk',
+            fromFile: false,
+            fromUrl: false,
+            fromStream: false,
+            maxStreams: 0,
+            server: '',
+            appName: '',
             streamKey: '',
-            secret: 'mirotalkRtmpSecret',
-            apiSecret: 'mirotalkRtmpApiSecret',
-            expirationHours: 4,
+            secret: '',
+            apiSecret: '',
+            expirationHours: 0,
             dir: 'rtmp',
-            ffmpeg: '/usr/bin/ffmpeg',
+            ffmpeg: '',
         },
     },
     middleware: {
@@ -111,17 +103,24 @@ module.exports = {
             allowed: ['127.0.0.1', '::1'],
         },
     },
+    features: {
+        publicApi: false,
+        publicRoomPages: false,
+        zapGoal: false,
+        payments: false,
+        roomPrefix: 'budabit-',
+    },
     api: {
         // Default secret key for app/api
-        keySecret: 'mirotalksfu_default_secret_234234',
+        keySecret: requiredEnv('API_KEY_SECRET'),
         // Define which endpoints are allowed
         allowed: {
             meetings: false,
-            meeting: true,
-            join: true,
+            meeting: false,
+            join: false,
             token: false,
-            slack: true,
-            mattermost: true,
+            slack: false,
+            mattermost: false,
             //...
         },
     },
@@ -130,7 +129,7 @@ module.exports = {
             JWT https://jwt.io/
             Securely manages credentials for host configurations and user authentication, enhancing security and streamlining processes.
          */
-        key: 'mirotalksfu_jwt_secret',
+        key: requiredEnv('JWT_KEY'),
         exp: '1h',
     },
     oidc: {
@@ -151,7 +150,7 @@ module.exports = {
         },
         config: {
             issuerBaseURL: 'https://server.example.com',
-            baseURL: `http://localhost:${process.env.PORT ? process.env.PORT : 3010}`, // https://sfu.mirotalk.com
+                baseURL: 'https://calls.budabit.club',
             clientID: 'clientID',
             clientSecret: 'clientSecret',
             secret: 'mirotalksfu-oidc-secret',
@@ -209,14 +208,7 @@ module.exports = {
         ],
     },
     presenters: {
-        list: [
-            /*
-                By default, the presenter is identified as the first participant to join the room, distinguished by their username and UUID. 
-                Additional layers can be added to specify valid presenters and co-presenters by setting designated usernames.
-            */
-            'Miroslav Pejic',
-            'miroslav.pejic.85@gmail.com',
-        ],
+        list: [],
         join_first: true, // Set to true for traditional behavior, false to prioritize presenters
     },
     chatGPT: {
@@ -380,37 +372,37 @@ module.exports = {
         */
         brand: {
             app: {
-                name: 'HiveTalk Vanilla',
-                title: 'HiveTalk Vanilla<br />Browser based Real-time video calls.<br />Simple, Secure, Fast.',
+                name: 'BudaBit Calls',
+                title: 'BudaBit Calls<br />Community video calls powered by HiveTalk.',
                 description:
-                    'Start your next video call with a single click. No download, plug-in, or login is required. Just get straight to talking, messaging, and sharing your screen.',
+                    'Join BudaBit community calls directly from the Community Call widget.',
             },
             site: {
-                title: 'HiveTalk Vanilla, Free Video Calls, Messaging and Screen Sharing',
+                title: 'BudaBit Community Calls',
                 icon: '../images/logo.svg',
                 appleTouchIcon: '../images/logo.svg',
             },
             meta: {
                 description:
-                    'MiroTalk Vanilla powered by WebRTC and mediasoup, Real-time Simple Secure Fast video calls, messaging and screen sharing capabilities in the browser.',
+                    'BudaBit community video calls powered by HiveTalk Vanilla, WebRTC, and mediasoup.',
                 keywords:
                     'webrtc, miro, mediasoup, mediasoup-client, self hosted, voip, sip, real-time communications, chat, messaging, meet, webrtc stun, webrtc turn, webrtc p2p, webrtc sfu, video meeting, video chat, video conference, multi video chat, multi video conference, peer to peer, p2p, sfu, rtc, alternative to, zoom, microsoft teams, google meet, jitsi, meeting',
             },
             og: {
                 type: 'app-webrtc',
-                siteName: 'HiveTalk Vanilla',
-                title: 'Click the link to make a call.',
-                description: 'HiveTalk Vanilla calling provides real-time video calls, messaging and screen sharing.',
-                image: 'https://sfu.mirotalk.com/images/mirotalksfu.png',
-                url: 'https://sfu.mirotalk.com',
+                siteName: 'BudaBit Calls',
+                title: 'Join a BudaBit community call.',
+                description: 'Community video calls powered by HiveTalk Vanilla.',
+                image: 'https://calls.budabit.club/images/hivetalk.png',
+                url: 'https://calls.budabit.club',
             },
             html: {
-                features: true,
+                features: false,
                 teams: true, // Please keep me always visible, thank you!
-                tryEasier: true,
+                tryEasier: false,
                 poweredBy: true,
-                sponsors: true,
-                advertisers: true,
+                sponsors: false,
+                advertisers: false,
                 footer: true,
             },
             //...
@@ -430,7 +422,7 @@ module.exports = {
                 pollButton: true,
                 editorButton: true,
                 raiseHandButton: true,
-                transcriptionButton: true,
+                transcriptionButton: false,
                 whiteboardButton: true,
                 snapshotRoomButton: true,
                 emojiRoomButton: true,
@@ -444,12 +436,12 @@ module.exports = {
                 unlockRoomButton: true, // presenter
                 broadcastingButton: true, // presenter
                 lobbyButton: true, // presenter
-                sendEmailInvitation: true, // presenter
+                sendEmailInvitation: false, // presenter
                 micOptionsButton: true, // presenter
-                tabRTMPStreamingBtn: true, // presenter
+                tabRTMPStreamingBtn: false, // presenter
                 tabModerator: true, // presenter
-                tabRecording: true,
-                host_only_recording: true, // presenter
+                tabRecording: false,
+                host_only_recording: false, // presenter
                 pushToTalk: true,
             },
             producerVideo: {
@@ -473,7 +465,7 @@ module.exports = {
                 muteVideoButton: true,
                 muteAudioButton: true,
                 audioVolumeInput: true,
-                geolocationButton: true, // Presenter
+                geolocationButton: false, // Presenter
                 banButton: true, // presenter
                 ejectButton: true, // presenter
             },
@@ -483,7 +475,7 @@ module.exports = {
                 sendVideoButton: true,
                 muteAudioButton: true,
                 audioVolumeInput: true,
-                geolocationButton: true, // Presenter
+                geolocationButton: false, // Presenter
                 banButton: true, // presenter
                 ejectButton: true, // presenter
             },
@@ -494,7 +486,7 @@ module.exports = {
                 chatEmojiButton: true,
                 chatMarkdownButton: true,
                 chatSpeechStartButton: true,
-                chatGPT: true,
+                chatGPT: false,
             },
             poll: {
                 pollPinButton: true,
@@ -506,7 +498,7 @@ module.exports = {
                 sendFileAllButton: true, // presenter
                 ejectAllButton: true, // presenter
                 sendFileButton: true, // presenter & guests
-                geoLocationButton: true, // presenter
+                geoLocationButton: false, // presenter
                 banButton: true, // presenter
                 ejectButton: true, // presenter
             },
@@ -521,7 +513,7 @@ module.exports = {
             Umami: https://github.com/umami-software/umami
             We use our Self-hosted Umami to track aggregated usage statistics in order to improve our service.
         */
-        enabled: true,
+        enabled: false,
         src: '', //'https://stats.mirotalk.com/script.js',
         id: '', //'41d26670-f275-45bb-af82-3ce91fe57756',
     },
@@ -531,7 +523,7 @@ module.exports = {
         worker: {
             rtcMinPort: 40000,
             rtcMaxPort: 40100,
-            disableLiburing: false, // https://github.com/axboe/liburing
+            disableLiburing: true, // https://github.com/axboe/liburing
             logLevel: 'error',
             logTags: ['info', 'ice', 'dtls', 'rtp', 'srtp', 'rtcp', 'rtx', 'bwe', 'score', 'simulcast', 'svc', 'sctp'],
         },

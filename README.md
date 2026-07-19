@@ -9,6 +9,30 @@ If you are looking for Hivetalk 2.0, which is called honey, go to https://honey.
 
 ---
 
+## BudaBit Pilot Deployment
+
+The `budabit-production` branch is the Corresponding Source for the BudaBit-operated pilot at
+`https://calls.budabit.club`. It preserves upstream attribution and applies a deployment-specific security baseline:
+
+- Direct anonymous joins are limited to room names beginning with `budabit-`.
+- The application listens only on `127.0.0.1:3010`; mediasoup announces `116.203.126.94` and uses TCP/UDP ports
+  `40000-40100` through Docker host networking.
+- Public room pages, REST API documentation, server recording, RTMP, zap goals, payments, AI, analytics,
+  geolocation, and external notification integrations are disabled.
+- Ordinary room passwords remain available without the upstream paid-lock flow.
+- The image is built from the committed lockfile, runs as an unprivileged user on a read-only filesystem, and is
+  tagged with its Git revision.
+
+Production secrets are stored outside Git in `/etc/hivetalk-vanilla/hivetalk.env`. After setting
+`HIVETALK_IMAGE_TAG` and `HIVETALK_REVISION` to the clean deployed commit, build and start with:
+
+```bash
+docker compose --env-file /etc/hivetalk-vanilla/hivetalk.env build
+docker compose --env-file /etc/hivetalk-vanilla/hivetalk.env up -d --no-build
+```
+
+The runtime `/source` route redirects to the exact deployed revision in this public repository.
+
 Free WebRTC - SFU - Simple, Secure, Scalable Real-Time Video Conferences with support for up to 4k resolution. It's compatible with all major browsers and platforms
 <img width="934" alt="Screenshot 2024-05-14 at 5 49 39 PM" src="https://github.com/user-attachments/assets/bb80fa00-c098-4d9b-bcfa-7cd555a2149d" />
 

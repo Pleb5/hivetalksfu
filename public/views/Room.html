@@ -2,136 +2,7 @@
 <html lang="en">
 
 <head>
-    <script type="module">
-        import {
-            onConnected,
-            requestProvider,
-            launchPaymentModal,
-        } from 'https://esm.sh/@getalby/bitcoin-connect@latest';
-        import { LightningAddress } from 'https://esm.sh/@getalby/lightning-tools@latest';
-        import confetti from 'https://cdn.skypack.dev/canvas-confetti';
-
-        onConnected((provider) => {
-            window.webln = provider;
-        });
-
-        window.moduleFunctions = {
-            sayHello: function () {
-                console.log('Hello from module!');
-            },
-            throwConfetti: function () {
-                confetti();
-            },
-            handleDonation: async (peer_name, address, amount) => {
-                return new Promise(async (resolve, reject) => {
-                    console.log(
-                        'handleDonation called with peer_name: ' +
-                        peer_name +
-                        ' LN: ' +
-                        address +
-                        ' amount: ' +
-                        amount,
-                    );
-
-                    if (!address || !amount) {
-                        alert('Please fill in both Lightning Address and Amount.');
-                        reject('Missing address or amount');
-                        return;
-                    }
-                    const ln = new LightningAddress(address);
-                    await ln.fetch();
-                    const invoice = await ln.requestInvoice({ satoshi: amount });
-
-                    let checkPaymentInterval;
-
-                    const { setPaid } = launchPaymentModal({
-                        invoice: invoice.paymentRequest,
-                        onPaid: ({ preimage }) => {
-                            clearInterval(checkPaymentInterval);
-                            // todo make alert pretty
-                            alert(
-                                'Paid to:  ' +
-                                address +
-                                ' amount: ' +
-                                amount +
-                                ' sats \n\n ' +
-                                'preimage: ' +
-                                preimage,
-                            );
-                            let result = ' zapped ' + address + ' ' + amount + ' sats';
-                            console.log(result);
-                            resolve(result); // Resolve the promise with the result string
-                        },
-                        onCancelled: () => {
-                            clearInterval(checkPaymentInterval); // Clear the interval on cancel
-                            // todo: make alert pretty
-                            alert('Payment cancelled');
-                            reject('Payment cancelled');
-                        },
-                    });
-
-                    checkPaymentInterval = setInterval(async () => {
-                        try {
-                            const paid = await invoice.verifyPayment();
-                            if (paid && invoice.preimage) {
-                                setPaid({
-                                    preimage: invoice.preimage,
-                                });
-                            }
-                        } catch (error) {
-                            console.log('waiting inside check payment interval....');
-                            // console.error(error);
-                        }
-                    }, 1000);
-                });
-            },
-            payInvoice: async (invoice, verifyPaymentFn) => {
-                return new Promise((resolve, reject) => {
-                    let checkPaymentInterval;
-                    const POLL_TIMEOUT_MS = 310_000; // slightly longer than invoice expiresIn (300s)
-                    const pollStart = Date.now();
-
-                    const { setPaid } = launchPaymentModal({
-                        invoice: invoice,
-                        onPaid: ({ preimage }) => {
-                            clearInterval(checkPaymentInterval);
-                            resolve({ preimage });
-                        },
-                        onCancelled: () => {
-                            clearInterval(checkPaymentInterval);
-                            reject('Payment cancelled');
-                        },
-                    });
-
-                    if (verifyPaymentFn) {
-                        checkPaymentInterval = setInterval(async () => {
-                            if (Date.now() - pollStart > POLL_TIMEOUT_MS) {
-                                clearInterval(checkPaymentInterval);
-                                reject('Invoice expired, please try again');
-                                return;
-                            }
-                            try {
-                                const result = await verifyPaymentFn();
-                                if (result && result.paid) {
-                                    setPaid({
-                                        preimage: result.preimage || 'confirmed',
-                                    });
-                                }
-                            } catch (error) {
-                                console.log('waiting inside check payment interval....');
-                            }
-                        }, 2000);
-                    }
-                });
-            },
-        };
-    </script>
-    <script src="https://unpkg.com/nostr-tools/lib/nostr.bundle.js"></script>
     <script src="../js/qrcode.min.js"></script>
-    <script src="../js/NostrSignupView.js"></script>
-    <script src="../js/NostrProfileView.js"></script>
-    <script src="../js/NostrWalletView.js"></script>
-    <script src="../js/NostrLogin.js" data-no-banner="true"></script>
 
     <!-- Title and Icon -->
     <title id="title">HiveTalk - Room Video Calls, Messaging and Screen Sharing.</title>
@@ -165,8 +36,6 @@
     <link rel="stylesheet" href="../css/GroupChat.css" />
     <link rel="stylesheet" href="../css/Polls.css" />
     <link rel="stylesheet" href="../css/Editor.css" />
-    <link rel="stylesheet" href="../css/nostr.css" />
-
     <!-- https://cdnjs.com/libraries/font-awesome -->
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" />
@@ -181,14 +50,14 @@
 
     <!-- flatpickr  https://flatpickr.js.org/themes/ -->
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
-    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/airbnb.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/airbnb.css" />
 
     <!--  pickr  https://github.com/simonwep/pickr -->
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/classic.min.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/monolith.min.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/nano.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.10.0/dist/themes/classic.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.10.0/dist/themes/monolith.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.10.0/dist/themes/nano.min.css" />
 
     <!-- Highlight  https://github.com/highlightjs/highlight.js -->
 
@@ -197,13 +66,12 @@
 
     <!-- Quill  https://github.com/slab/quill -->
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" />
 
     <script defer src="../js/Brand.js"></script>
 
-    <!-- Modern or es5 bundle -->
-    <script defer src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.es5.min.js"></script>
+    <!-- Color picker -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.10.0/dist/pickr.min.js"></script>
 
     <!-- Bootstrap 5 -->
 
@@ -215,20 +83,17 @@
 
     <!-- axios -->
 
-    <script async src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script async src="https://cdn.jsdelivr.net/npm/axios@1.16.1/dist/axios.min.js"></script>
 
     <!-- UAParser -->
 
-    <script defer src="https://cdn.jsdelivr.net/npm/ua-parser-js@latest/dist/ua-parser.min.js"></script>
-
-    <script async src="../js/Umami.js"></script>
-    <script async src="../js/Translate.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/ua-parser-js@2.0.10/dist/ua-parser.min.js"></script>
 
     <!-- Js scripts https://cdn.jsdelivr.net -->
 
     <script defer src="/socket.io/socket.io.js"></script>
     <script defer src="../sfu/MediasoupClient.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/xss/dist/xss.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/xss@1.0.15/dist/xss.min.js"></script>
     <script defer src="../js/LocalStorage.js"></script>
     <script defer src="../js/Rules.js"></script>
     <script defer src="../js/Helpers.js"></script>
@@ -237,21 +102,21 @@
     <script defer src="../js/VideoGrid.js"></script>
     <script defer src="../js/RoomClient.js"></script>
     <script defer src="../js/Room.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/marked@18.0.6/lib/marked.umd.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/detectrtc@1.4.1/DetectRTC.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/fabric@5.3.0-browser/dist/fabric.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11.4.8"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/emoji-mart@latest/dist/browser.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/dist/browser.js"></script>
     <!-- <script defer src="https://unpkg.com/@popperjs/core@2"></script>
         <script defer src="https://unpkg.com/tippy.js@6"></script> -->
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.11.8/umd/popper.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/tippy.js/6.3.7/tippy-bundle.umd.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 </head>
 
 <body>
@@ -1113,35 +978,6 @@
                                     <i class="fa-solid fa-user-shield"></i>
                                     <p>Presenter:</p>
                                     <p id="isUserPresenter">true</p>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <!-- Bitcoin Connect button for Zaps -->
-                                <div class="title">
-                                    <p>⚡️ Lightning:</p>
-                                    <p>
-                                        <bc-button></bc-button>
-                                    </p>
-                                </div>
-                            </td>
-                        </tr>
-
-                        <!-- Nostr Edit Profile button -->
-                        <tr>
-                            <td>
-                                <div class="title">
-                                    <p>Nostr Profile:</p>
-                                    <p>
-                                        <button id="nostrButton" style="border: none; background: #6951FA; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                            </svg>
-                                            Edit Profile
-                                        </button>
-                                    </p>
                                 </div>
                             </td>
                         </tr>

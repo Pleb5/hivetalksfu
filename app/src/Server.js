@@ -21,7 +21,6 @@ prod dependencies: {
     express-openid-connect  : https://www.npmjs.com/package/express-openid-connect
     fluent-ffmpeg           : https://www.npmjs.com/package/fluent-ffmpeg
     he                      : https://www.npmjs.com/package/he
-    httpolyglot             : https://www.npmjs.com/package/httpolyglot
     js-yaml                 : https://www.npmjs.com/package/js-yaml
     jsdom                   : https://www.npmjs.com/package/jsdom
     jsonwebtoken            : https://www.npmjs.com/package/jsonwebtoken
@@ -69,7 +68,6 @@ const { auth, requiresAuth } = require('express-openid-connect');
 const cors = require('cors');
 const compression = require('compression');
 const socketIo = require('socket.io');
-const https = require('httpolyglot');
 const mediasoup = require('mediasoup');
 const mediasoupClient = require('mediasoup-client');
 const http = require('http');
@@ -146,21 +144,18 @@ const hbs = exphbs.create({
     }
 });
 
-const options = {
-    cert: fs.readFileSync(path.join(__dirname, config.server.ssl.cert), 'utf-8'),
-    key: fs.readFileSync(path.join(__dirname, config.server.ssl.key), 'utf-8'),
-};
-
 const corsOptions = {
     origin: config.server?.cors?.origin || '*',
     methods: config.server?.cors?.methods || ['GET', 'POST'],
 };
 
-const httpsServer = https.createServer(options, app);
-const io = socketIo(httpsServer, {
-    maxHttpBufferSize: 1e7,
+const httpServer = http.createServer(app);
+const allowedSocketOrigins = new Set(Array.isArray(corsOptions.origin) ? corsOptions.origin : [corsOptions.origin]);
+const io = socketIo(httpServer, {
+    maxHttpBufferSize: 1e6,
     transports: ['websocket'],
     cors: corsOptions,
+    allowRequest: (req, callback) => callback(null, allowedSocketOrigins.has(req.headers.origin)),
 });
 
 const host = 'https://' + 'localhost' + ':' + config.server.listen.port; // config.server.listen.ip
@@ -191,6 +186,18 @@ const restApi = {
     docs: host + '/api/v1/docs', // api docs
     allowed: config.api?.allowed,
 };
+
+const features = {
+    payments: config.features?.payments === true,
+    publicApi: config.features?.publicApi === true,
+    publicRoomPages: config.features?.publicRoomPages === true,
+    roomPrefix: config.features?.roomPrefix || '',
+    zapGoal: config.features?.zapGoal === true,
+};
+
+function hasAllowedRoomPrefix(roomId) {
+    return !features.roomPrefix || (typeof roomId === 'string' && roomId.startsWith(features.roomPrefix));
+}
 
 // Sentry monitoring
 const sentryEnabled = config.sentry.enabled;
@@ -392,6 +399,8 @@ function startServer() {
     // Configuration values are loaded from environment variables (.env file)
     // Required env vars: ZAP_GOAL_SATS, ZAP_GOAL_API_URL
     async function checkZapGoal(req, res, next) {
+        if (!features.zapGoal) return next();
+
         const ZAP_GOAL_SATS = parseInt(process.env.ZAP_GOAL_SATS);
         const API_URL = process.env.ZAP_GOAL_API_URL;
         
@@ -478,13 +487,18 @@ function startServer() {
     }
 
     // Start the app
+    app.use('/.well-known', (req, res) => res.sendStatus(404));
+    app.use('/views', (req, res) => res.sendStatus(404));
     app.use(express.static(dir.public));
     app.use(cors(corsOptions));
     app.use(compression());
-    app.use(express.json({ limit: '50mb' })); // Handles JSON payloads
-    app.use(express.urlencoded({ extended: true, limit: '50mb' })); // Handles URL-encoded payloads
-    app.use(express.raw({ type: 'video/webm', limit: '50mb' })); // Handles raw binary data
-    app.use(restApi.basePath + '/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); // api docs
+    app.use(express.json({ limit: '2mb' }));
+    app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+    app.use(express.raw({ type: 'video/webm', limit: '2mb' }));
+    app.use(restApi.basePath, (req, res, next) => (features.publicApi ? next() : res.sendStatus(404)));
+    if (features.publicApi) {
+        app.use(restApi.basePath + '/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+    }
 
     // IP Whitelist check ...
     app.use(restrictAccessByIP);
@@ -548,8 +562,8 @@ function startServer() {
     app.use((err, req, res, next) => {
         if (err instanceof SyntaxError || err.status === 400 || 'body' in err) {
             log.error('Request Error', {
-                header: req.headers,
-                body: req.body,
+                method: req.method,
+                path: req.path,
                 error: err.message,
             });
             return res.status(400).send({ status: 404, message: err.message }); // Bad request
@@ -573,6 +587,8 @@ function startServer() {
     }
 
     app.get('/active', (req, res) => {
+        if (!features.publicRoomPages) return res.sendStatus(404);
+
         let currentYear = new Date().getFullYear()
         let activeHtml = fs.readFileSync(path.join(__dirname, '../../', 'public/views/active.html'), 'utf8');    
         activeHtml = activeHtml.replace('{{currentYear}}', currentYear);
@@ -671,8 +687,26 @@ function startServer() {
         res.status(200).json({ message: config.ui ? config.ui.brand : false });
     });
 
+    app.get('/healthz', (req, res) => {
+        return workers.length === config.mediasoup.numWorkers ? res.sendStatus(204) : res.sendStatus(503);
+    });
+
+    app.get('/version', (req, res) => {
+        return res.json({
+            version: packageJson.version,
+            revision: config.deployment.revision,
+        });
+    });
+
+    app.get('/source', (req, res) => {
+        const revision = encodeURIComponent(config.deployment.revision);
+        return res.redirect(302, `https://github.com/Pleb5/hivetalksfu/tree/${revision}`);
+    });
+
     // main page
     app.get(['/'], OIDCAuth, (req, res) => {
+        if (!features.publicRoomPages) return res.sendStatus(404);
+
         //log.debug('/ - hostCfg ----->', hostCfg);
 
         if (!OIDC.enabled && hostCfg.protected) {
@@ -693,22 +727,21 @@ function startServer() {
 
     // Route to display rtmp streamer
     app.get('/rtmp', OIDCAuth, (req, res) => {
-        if (!rtmpCfg || !rtmpCfg.fromStream) {
-            return res.json({ message: 'The RTMP Streamer is currently disabled.' });
-        }
+        if (!rtmpCfg?.enabled || !rtmpCfg.fromStream) return res.sendStatus(404);
         return res.sendFile(views.rtmpStreamer);
     });
 
     // Route to display zap goal status page
     // This page shows when monthly zap goal is not met
     app.get('/zapgoal', (req, res) => {
-        res.sendFile(views.zapGoal);
+        return features.zapGoal ? res.sendFile(views.zapGoal) : res.sendStatus(404);
     });
 
     // API endpoint to provide zap goal configuration to client
     // Returns configuration values from environment variables
     // Used by zapgoal.html to avoid hardcoding values
     app.get('/api/zapgoal/config', (req, res) => {
+        if (!features.zapGoal) return res.sendStatus(404);
         res.json({
             apiBaseUrl: process.env.ZAP_GOAL_API_URL,
             goalAmount: parseInt(process.env.ZAP_GOAL_SATS),
@@ -718,6 +751,8 @@ function startServer() {
 
     // set new room name and join
     app.get(['/newroom'], checkZapGoal, OIDCAuth, (req, res) => {
+        if (!features.publicRoomPages) return res.sendStatus(404);
+
         //log.info('/newroom - hostCfg ----->', hostCfg);
 
         if (!OIDC.enabled && hostCfg.protected) {
@@ -749,10 +784,10 @@ function startServer() {
 
     // Handle Direct join room with params
     app.get('/join/', checkZapGoal, async (req, res) => {
+        if (Object.keys(req.query).length === 0) return res.sendStatus(404);
+
         if (Object.keys(req.query).length > 0) {
             //log.debug('/join/params - hostCfg ----->', hostCfg);
-
-            log.debug('Direct Join', req.query);
 
             // http://localhost:3010/join?room=test&roomPassword=0&name=mirotalksfu&audio=1&video=1&screen=0&hide=0&notify=1
             // http://localhost:3010/join?room=test&roomPassword=0&name=mirotalksfu&audio=1&video=1&screen=0&hide=0&notify=0&token=token
@@ -767,6 +802,8 @@ function startServer() {
                     message: 'Invalid Room name!\nPath traversal pattern detected!',
                 });
             }
+
+            if (!hasAllowedRoomPrefix(room)) return res.sendStatus(404);
 
             let peerUsername = '';
             let peerPassword = '';
@@ -810,7 +847,7 @@ function startServer() {
                         }
                     }
                 } catch (err) {
-                    log.error('Direct Join JWT error', { error: err.message, token: token });
+                    log.error('Direct Join JWT error', { error: err.message });
                     return hostCfg.protected || hostCfg.user_auth
                         ? res.sendFile(views.login)
                         : res.sendFile(views.newRoom);
@@ -861,6 +898,8 @@ function startServer() {
             log.warn('/join/:roomId invalid', roomId);
             return res.redirect('/');
         }
+
+        if (!hasAllowedRoomPrefix(roomId)) return res.sendStatus(404);
 
         // Get room info from Supabase
         // const roomInfo = await getRoomInfo(roomId);
@@ -918,12 +957,12 @@ function startServer() {
 
     // hivetalk support
     app.get(['/support'], (req, res) => {
-        res.sendFile(views.support);
+        res.sendStatus(404);
     });
 
     // hivetalk donate
     app.get(['/donate'], (req, res) => {
-        res.sendFile(views.support);
+        res.sendStatus(404);
     });
 
     // hivetalk donate
@@ -1044,6 +1083,8 @@ function startServer() {
     // ####################################################
 
     app.post(['/recSync'], (req, res) => {
+        if (!serverRecordingEnabled) return res.sendStatus(404);
+
         // Store recording...
         if (serverRecordingEnabled) {
             //
@@ -1096,6 +1137,8 @@ function startServer() {
     // ###############################################################
 
     function checkRTMPApiSecret(req, res, next) {
+        if (!rtmpCfg?.enabled) return res.sendStatus(404);
+
         const expectedApiSecret = rtmpCfg && rtmpCfg.apiSecret;
         const apiSecret = req.headers.authorization;
 
@@ -1126,7 +1169,7 @@ function startServer() {
     });
 
     app.get('/rtmpEnabled', (req, res) => {
-        const rtmpEnabled = rtmpCfg && rtmpCfg.enabled;
+        const rtmpEnabled = rtmpCfg?.enabled === true;
         log.debug('RTMP enabled', rtmpEnabled);
         res.json({ enabled: rtmpEnabled });
     });
@@ -1406,6 +1449,8 @@ function startServer() {
 
     // ZBD Payment Endpoints
     app.post('/api/zbd/charge', async (req, res) => {
+        if (!features.payments) return res.sendStatus(404);
+
         const { amount, description } = req.body;
         const zbdApiKey = process.env.ZBD_API_KEY;
 
@@ -1456,6 +1501,8 @@ function startServer() {
     });
 
     app.get('/api/zbd/charge/:paymentHash', async (req, res) => {
+        if (!features.payments) return res.sendStatus(404);
+
         const { paymentHash } = req.params;
         const zbdApiKey = process.env.ZBD_API_KEY;
 
@@ -1488,15 +1535,6 @@ function startServer() {
     //         res.status(500).json({ error: 'Failed to check room ownership' });
     //     }
     // });
-
-    app.post('/api/check-room-peers', async (req, res) => {
-        const { room_id } = req.body;
-        const room = roomList.get(room_id);    
-        const peerCount = room ? room.peers.size : 0;
-        console.log('check-room-peers --> ', peerCount);
-
-        res.json({ peerCount });
-    });
 
     // ####################################################
     // SLACK API
@@ -1552,7 +1590,6 @@ function startServer() {
 
             // Core Configurations
             cors_options: corsOptions,
-            jwtCfg: jwtCfg,
             rest_api: restApi,
 
             // Middleware and UI
@@ -1623,8 +1660,9 @@ function startServer() {
     // START SERVER
     // ####################################################
 
-    httpsServer.listen(config.server.listen.port, () => {
-        log.log(
+    function listen() {
+        httpServer.listen(config.server.listen.port, config.server.listen.ip, () => {
+            log.log(
             `%c
      ^^      .-=-=-=-.  ^^
  ^^        ('-=-=-=-=-')         ^^
@@ -1642,18 +1680,28 @@ function startServer() {
             
   -=[HIVETALK server started ....]=-`,
             'font-family:monospace',
-        );
+            );
 
-        if (config.ngrok.enabled && config.ngrok.authToken !== '') {
-            if (!ngrok) {
-                log.warn('Ngrok is enabled in config but not installed. Skipping ngrok startup.');
-                log.info('To use ngrok, install with: npm install ngrok (Note: ngrok has known security vulnerabilities)');
-                return log.info('Server config', getServerConfig());
+            if (config.ngrok.enabled && config.ngrok.authToken !== '') {
+                if (!ngrok) {
+                    log.warn('Ngrok is enabled in config but not installed. Skipping ngrok startup.');
+                    log.info(
+                        'To use ngrok, install with: npm install ngrok (Note: ngrok has known security vulnerabilities)',
+                    );
+                    return log.info('Server config', getServerConfig());
+                }
+                return ngrokStart();
             }
-            return ngrokStart();
-        }
-        log.info('Server config', getServerConfig());
-    });
+            log.info('Server ready', {
+                listen: `${config.server.listen.ip}:${config.server.listen.port}`,
+                workers: config.mediasoup.numWorkers,
+                announcedAddress,
+                recording: serverRecordingEnabled,
+                rtmp: rtmpCfg.enabled,
+                publicApi: features.publicApi,
+            });
+        });
+    }
 
     // ####################################################
     // WORKERS
@@ -1662,6 +1710,7 @@ function startServer() {
     (async () => {
         try {
             await createWorkers();
+            listen();
         } catch (err) {
             log.error('Create Worker ERROR --->', err);
             process.exit(1);
@@ -1752,7 +1801,15 @@ function startServer() {
         });
 
         socket.on('createRoom', async ({ room_id }, callback) => {
-            socket.room_id = room_id;
+            const roomId = checkXSS(room_id);
+            if (!Validator.isValidRoomName(roomId) || !hasAllowedRoomPrefix(roomId)) {
+                return callback({ error: 'Invalid room' });
+            }
+            if (socket.room_id && socket.room_id !== roomId) {
+                return callback({ error: 'A socket can only access one room' });
+            }
+
+            socket.room_id = roomId;
 
             if (roomList.has(socket.room_id)) {
                 callback({ error: 'already exists' });
@@ -1783,6 +1840,16 @@ function startServer() {
 
             const data = checkXSS(dataObject);
 
+            if (!data?.peer_info || typeof data.peer_info.peer_name !== 'string') return cb('invalid');
+            if (!data.peer_info.peer_name.trim() || data.peer_info.peer_name.length > 64) return cb('invalid');
+
+            data.room_id = socket.room_id;
+            data.peer_info.peer_id = socket.id;
+            data.peer_info.peer_pubkey = '';
+            data.peer_info.peer_npub = '';
+            data.peer_info.peer_lnaddress = '';
+            data.peer_info.peer_url = '';
+
             // Don't log any user data
             //log.info('User joined', data);
 
@@ -1796,8 +1863,8 @@ function startServer() {
             const { peer_name, peer_pubkey, peer_id, peer_uuid, peer_token, os_name, os_version, browser_name, browser_version } =
                 data.peer_info;
 
-            console.log('>>>>> [Join] <<<< - socket.on Peer Info', {peer_name: peer_name, peer_pubkey: peer_pubkey, peer_id: peer_id});
-            let is_presenter = true;
+            log.debug('[Join] - Peer info received', { peer_id });
+            let is_presenter = false;
 
             // User Auth required or detect token, we check if peer valid
             if (hostCfg.user_auth || peer_token) {
@@ -1807,7 +1874,7 @@ function startServer() {
                         const validToken = await isValidToken(peer_token);
 
                         if (!validToken) {
-                            log.warn('[Join] - Invalid token', peer_token);
+                            log.warn('[Join] - Invalid token');
                             return cb('unauthorized');
                         }
 
@@ -1836,7 +1903,6 @@ function startServer() {
                     } catch (err) {
                         log.error('[Join] - JWT error', {
                             error: err.message,
-                            token: peer_token,
                         });
                         return cb('unauthorized');
                     }
@@ -1869,6 +1935,16 @@ function startServer() {
                 return cb('isBanned');
             }
 
+            const isPresenter = peer_token
+                ? is_presenter
+                : (config.presenters.join_first && room.getPeers().size === 0) ||
+                  config.presenters.list.includes(peer_name);
+
+            if (room.isLocked() && !isPresenter) {
+                socket.pendingJoin = data;
+                return cb('isLocked');
+            }
+
             room.addPeer(new Peer(socket.id, data));
 
             const activeRooms = getActiveRooms();
@@ -1881,28 +1957,16 @@ function startServer() {
 
             if (!(socket.room_id in presenters)) presenters[socket.room_id] = {};
 
-            // Set the presenters
-            const presenter = {
-                peer_ip: peer_ip,
-                peer_name: peer_name,
-                peer_uuid: peer_uuid,
-                is_presenter: is_presenter,
-            };
-            // first we check if the username match the presenters username
-            if (config.presenters && config.presenters.list && config.presenters.list.includes(peer_name)) {
-                presenters[socket.room_id][socket.id] = presenter;
-            } else {
-                // if not match the presenters username, the first one join room is the presenter
-                if (Object.keys(presenters[socket.room_id]).length === 0) {
-                    presenters[socket.room_id][socket.id] = presenter;
-                }
+            if (isPresenter) {
+                presenters[socket.room_id][socket.id] = {
+                    peer_ip,
+                    peer_name,
+                    peer_uuid,
+                    is_presenter: true,
+                };
             }
 
             log.info('[Join] - Connected presenters grp by roomId', presenters);
-
-            const isPresenter = peer_token
-                ? is_presenter
-                : await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
 
             const peer = room.getPeer(socket.id);
 
@@ -1913,11 +1977,6 @@ function startServer() {
                 peer_name: peer_name,
                 peer_presenter: isPresenter,
             });
-
-            if (room.isLocked() && !isPresenter) {
-                log.debug('The user was rejected because the room is locked, and they are not a presenter');
-                return cb('isLocked');
-            }
 
             if (room.isLobbyEnabled() && !isPresenter) {
                 log.debug(
@@ -2320,6 +2379,7 @@ function startServer() {
 
 
         socket.on('createLockPayment', async (_, callback) => {
+            if (!features.payments) return callback({ error: 'Payments are disabled' });
             if (!roomExists(socket)) return callback({ error: 'Room not found' });
 
             const priceSats = parseInt(process.env.ROOM_LOCK_PRICE_SATS || 1000);
@@ -2375,6 +2435,8 @@ function startServer() {
         });
 
         socket.on('checkLockPayment', async ({ paymentHash }, callback) => {
+            if (!features.payments) return callback({ paid: false });
+
             const zbdApiKey = process.env.ZBD_API_KEY;
             if (!zbdApiKey) return callback({ paid: false });
 
@@ -2416,9 +2478,32 @@ function startServer() {
         });
 
         socket.on('roomAction', async (dataObject) => {
-            if (!roomExists(socket)) return;
-
             const data = checkXSS(dataObject);
+            const room = getRoom(socket);
+
+            if (data.action === 'checkPassword') {
+                if (!room?.getPassword || !room?.sendTo) return;
+                const roomData = {
+                    room: null,
+                    password: 'KO',
+                };
+                if (
+                    socket.pendingJoin &&
+                    typeof data.password === 'string' &&
+                    data.password === room.getPassword()
+                ) {
+                    room.addPeer(new Peer(socket.id, socket.pendingJoin));
+                    const peer = room.getPeer(socket.id);
+                    peer.updatePeerInfo({ type: 'presenter', status: false });
+                    socket.pendingJoin = null;
+                    roomData.room = room.toJson();
+                    roomData.password = 'OK';
+                }
+                socket.emit('roomPassword', roomData);
+                return;
+            }
+
+            if (!roomExists(socket)) return;
 
             const isPresenter = await isPeerPresenter(
                 socket.room_id,
@@ -2426,8 +2511,6 @@ function startServer() {
                 data.peer_name,
                 data.peer_uuid,
             );
-            const room = getRoom(socket);
-
             log.debug('Room action:', data);
 
             switch (data.action) {
@@ -2441,8 +2524,7 @@ function startServer() {
 
                     // Payment Check
                     const peer = getPeer(socket);
-                    const zbdApiKey = process.env.ZBD_API_KEY;
-                    if (zbdApiKey && !peer.hasPaidLock) {
+                    if (features.payments && !peer.hasPaidLock) {
                         log.warn('roomAction lock rejected: payment not verified', { socket_id: socket.id, room_id: socket.room_id });
                         room.sendTo(socket.id, 'roomAction', 'lockRejected');
                         return;
@@ -2453,23 +2535,12 @@ function startServer() {
                         room.broadCast(socket.id, 'roomAction', data.action);
                     }
                     break;
-                case 'checkPassword':
-                    let roomData = {
-                        room: null,
-                        password: 'KO',
-                    };
-                    if (data.password == room.getPassword()) {
-                        roomData.room = room.toJson();
-                        roomData.password = 'OK';
-                    }
-                    room.sendTo(socket.id, 'roomPassword', roomData);
-                    break;
                 case 'unlock':
                     if (!isPresenter) return;
                     
                     // Reset payment verification on unlock so they must pay again to lock
                     const peerUnlock = getPeer(socket);
-                    if (peerUnlock) peerUnlock.hasPaidLock = false;
+                    if (features.payments && peerUnlock) peerUnlock.hasPaidLock = false;
 
                     room.setLocked(false);
                     room.broadCast(socket.id, 'roomAction', data.action);
@@ -2794,14 +2865,9 @@ function startServer() {
             if (!realPeer) {
                 log.warn('Fake message detected', {
                     ip: getIpSocket(socket),
-                    realFrom: peer_name,
-                    fakeFrom: data.peer_name,
-                    msg: data.peer_msg,
                 });
                 return;
             }
-
-            log.info('message', data);
 
             data.to_peer_id == 'all'
                 ? room.broadCast(socket.id, 'message', data)
@@ -3122,6 +3188,7 @@ function startServer() {
         });
 
         socket.on('getRTMP', async ({}, cb) => {
+            if (!rtmpCfg?.enabled) return cb([]);
             if (!roomExists(socket)) return;
 
             const room = getRoom(socket);
@@ -3132,6 +3199,7 @@ function startServer() {
         });
 
         socket.on('startRTMP', async (dataObject, cb) => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromFile) return cb(false);
             if (!roomExists(socket)) return;
 
             if (rtmpCfg && rtmpFileStreamsCount >= rtmpCfg.maxStreams) {
@@ -3156,6 +3224,7 @@ function startServer() {
         });
 
         socket.on('stopRTMP', async () => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromFile) return;
             if (!roomExists(socket)) return;
 
             const room = getRoom(socket);
@@ -3168,6 +3237,7 @@ function startServer() {
         });
 
         socket.on('endOrErrorRTMP', async () => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromFile) return;
             if (!roomExists(socket)) return;
 
             rtmpFileStreamsCount--;
@@ -3176,6 +3246,7 @@ function startServer() {
         });
 
         socket.on('startRTMPfromURL', async (dataObject, cb) => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromUrl) return cb(false);
             if (!roomExists(socket)) return;
 
             if (rtmpCfg && rtmpUrlStreamsCount >= rtmpCfg.maxStreams) {
@@ -3200,6 +3271,7 @@ function startServer() {
         });
 
         socket.on('stopRTMPfromURL', async () => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromUrl) return;
             if (!roomExists(socket)) return;
 
             const room = getRoom(socket);
@@ -3212,6 +3284,7 @@ function startServer() {
         });
 
         socket.on('endOrErrorRTMPfromURL', async () => {
+            if (!rtmpCfg?.enabled || !rtmpCfg.fromUrl) return;
             if (!roomExists(socket)) return;
 
             rtmpUrlStreamsCount--;
@@ -3351,7 +3424,11 @@ function startServer() {
         socket.on('disconnect', async () => {
             pendingLockCharges.delete(socket.id);
 
-            if (!roomExists(socket)) return;
+            if (!roomExists(socket)) {
+                const emptyRoom = roomList.get(socket.room_id);
+                if (emptyRoom?.getPeers?.().size === 0) roomList.delete(socket.room_id);
+                return;
+            }
 
             const { room, peer } = getRoomAndPeer(socket);
 
@@ -3455,7 +3532,8 @@ function startServer() {
         }
 
         function roomExists(socket) {
-            return roomList.has(socket.room_id);
+            const room = roomList.get(socket.room_id);
+            return Boolean(room?.getPeer?.(socket.id));
         }
 
         function isValidFileName(fileName) {
@@ -3690,7 +3768,6 @@ function startServer() {
     }
 
     function isAllowedRoomAccess(logMessage, req, hostCfg, authHost, roomList, roomId) {
-        console.log('roomList type:', typeof roomList, roomList instanceof Map, roomList);
         const OIDCUserAuthenticated = OIDC.enabled && req.oidc.isAuthenticated();
         const hostUserAuthenticated = hostCfg.protected && authHost.authenticated;
         const roomExist = roomList.has(roomId);

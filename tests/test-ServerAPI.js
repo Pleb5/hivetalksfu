@@ -8,6 +8,11 @@ const sinon = require('sinon');
 const proxyquire = require('proxyquire');
 const jwt = require('jsonwebtoken');
 const CryptoJS = require('crypto-js');
+
+process.env.API_KEY_SECRET = 'test-api-secret';
+process.env.HIVETALK_REVISION = '0000000000000000000000000000000000000000';
+process.env.JWT_KEY = 'test-jwt-secret';
+
 const ServerApi = require('../app/src/ServerApi');
 const config = require('../app/src/config');
 
@@ -152,12 +157,12 @@ describe('test-ServerAPI', () => {
             result.should.equal('jwtToken');
 
             signStub
-                .calledWith({ data: 'encryptedPayload' }, 'mirotalksfu_jwt_secret', { expiresIn: '1h' })
+                .calledWith({ data: 'encryptedPayload' }, 'test-jwt-secret', { expiresIn: '1h' })
                 .should.be.true();
             encryptStub
                 .calledWith(
                     JSON.stringify({ username: 'user', password: 'pass', presenter: 'true' }),
-                    'mirotalksfu_jwt_secret',
+                    'test-jwt-secret',
                 )
                 .should.be.true();
 

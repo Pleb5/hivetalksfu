@@ -1,33 +1,52 @@
-# Use a lightweight Node.js image
-FROM node:20-slim
+FROM node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS build
 
-# Set working directory
 WORKDIR /src
 
-# Set environment variable to skip downloading prebuilt workers
-ENV MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD="true"
+ENV MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true
 
-# Install necessary system packages and dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         python3 \
         python3-pip \
-        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package.json and install npm dependencies
-COPY package.json .
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# Cleanup unnecessary packages and files
-RUN apt-get purge -y --auto-remove build-essential python3-pip \
-&& npm cache clean --force \
-&& rm -rf /tmp/* /var/tmp/* /usr/share/doc/*
+COPY app ./app
+COPY public ./public
+COPY tests ./tests
 
-# Copy the application code
-COPY app app
-COPY public public
+RUN npm audit --omit=dev --audit-level=high \
+    && npm test \
+    && test -x node_modules/mediasoup/worker/out/Release/mediasoup-worker \
+    && npm prune --omit=dev
 
-# Set default command to start the application
-CMD ["npm", "start"]
+FROM node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS runtime
+
+ARG VCS_REF=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/Pleb5/hivetalksfu" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.licenses="AGPL-3.0-only"
+
+WORKDIR /src
+
+ENV NODE_ENV=production
+
+COPY --from=build --chown=node:node /src/package.json ./package.json
+COPY --from=build --chown=node:node /src/package-lock.json ./package-lock.json
+COPY --from=build --chown=node:node /src/node_modules ./node_modules
+COPY --from=build --chown=node:node /src/app ./app
+COPY --from=build --chown=node:node /src/public ./public
+COPY --chown=node:node LICENSE README.md ./
+
+USER node
+
+EXPOSE 3010/tcp 40000-40100/tcp 40000-40100/udp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["node", "-e", "require('http').get('http://127.0.0.1:3010/healthz',r=>process.exit(r.statusCode===204?0:1)).on('error',()=>process.exit(1))"]
+
+CMD ["node", "app/src/Server.js"]

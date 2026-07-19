@@ -506,40 +506,16 @@ class RoomClient {
     }
 
     async checkRoomHasPeers() {
-        const response = await fetch('/api/check-room-peers', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ room_id: this.room_id }),
+        this.createRoom(this.room_id).then(async () => {
+            const data = {
+                room_id: this.room_id,
+                peer_info: this.peer_info,
+            };
+            await this.join(data);
+            this.initSockets();
+            this._isConnected = true;
+            this.successCallback();
         });
-
-        const roomData = await response.json();
-        if (roomData.peerCount > 0) {
-            // Room already has peers, allow joining directly
-            this.openState = true;
-            this.createRoom(this.room_id).then(async () => {
-                const data = {
-                    room_id: this.room_id,
-                    peer_info: this.peer_info,
-                };
-                await this.join(data);
-                this.initSockets();
-                this._isConnected = true;
-                this.successCallback();
-            });
-        } else {
-            this.createRoom(this.room_id).then(async () => {
-                const data = {
-                    room_id: this.room_id,
-                    peer_info: this.peer_info,
-                };
-                await this.join(data);
-                this.initSockets();
-                this._isConnected = true;
-                this.successCallback();
-            });
-        }
         // temporarily comment out since difficult to update
         // else { 
         //     this.checkRoomOwnership();
@@ -657,7 +633,7 @@ class RoomClient {
     }
 
     async join(data) {
-        this.socket
+        return this.socket
             .request('join', data)
             .then(async (room) => {
                 console.log('##### JOIN ROOM #####', room);
@@ -4261,6 +4237,7 @@ class RoomClient {
         for (let i = 0; i < cameras.length; i++) {
             let cameraId = cameras[i].id.replace('__video', '');
             let videoPlayer = this.getId(cameraId);
+            if (!videoPlayer) continue;
             videoPlayer.hasAttribute('controls')
                 ? videoPlayer.removeAttribute('controls')
                 : videoPlayer.setAttribute('controls', isVideoControlsOn);
@@ -7218,87 +7195,48 @@ class RoomClient {
                     if (popup) this.roomStatus(action);
                     break;
                 case 'lock':
-                    // Payment Check
-                    this.socket
-                        .request('createLockPayment')
-                        .then(async (response) => {
-                            // Payment Verification
-                            const verifyPayment = async () => {
-                                const result = await this.socket.request('checkLockPayment', {
-                                    paymentHash: response.paymentHash,
-                                });
-                                return result;
-                            };
-
-                            try {
-                                const result = await window.moduleFunctions.payInvoice(
-                                    response.invoice,
-                                    verifyPayment,
-                                );
-                                // if result.preimage ...
-                            } catch (err) {
-                                // User cancelled payment
-                                return;
-                            }
-
-                            // Proceed to Lock
-                            if (room_password) {
-                                this.socket
-                                    .request('getPeerCounts')
-                                    .then(async (res) => {
-                                        // Only the presenter can lock the room
-                                        if (isPresenter || res.peerCounts == 1) {
-                                            isPresenter = true;
-                                            this.peer_info.peer_presenter = isPresenter;
-                                            this.getId('isUserPresenter').innerText = isPresenter;
-                                            data.password = room_password;
-                                            this.socket.emit('roomAction', data);
-                                            if (popup) this.roomStatus(action); // this.roomStatus usage check
-                                        }
-                                    })
-                                    .catch((err) => {
-                                        console.log('Get peer counts:', err);
-                                    });
-                            } else {
-                                Swal.fire({
-                                    allowOutsideClick: false,
-                                    allowEscapeKey: false,
-                                    showDenyButton: true,
-                                    background: swalBackground,
-                                    imageUrl: image.locked,
-                                    input: 'text',
-                                    inputPlaceholder: 'Set Room password',
-                                    confirmButtonText: `OK`,
-                                    denyButtonText: `Cancel`,
-                                    showClass: { popup: 'animate__animated animate__fadeInDown' },
-                                    hideClass: { popup: 'animate__animated animate__fadeOutUp' },
-                                    inputValidator: (pwd) => {
-                                        if (!pwd) return 'Please enter the Room password';
-                                        this.RoomPassword = pwd;
-                                    },
-                                }).then((result) => {
-                                    if (result.isConfirmed) {
-                                        data.password = this.RoomPassword;
-                                        this.socket.emit('roomAction', data);
-                                        this.roomStatus(action);
-                                    }
-                                });
-                            }
-                        })
-                        .catch((err) => {
-                            console.error('Lock payment error:', err);
-                            Swal.fire({
-                                allowOutsideClick: false,
-                                allowEscapeKey: false,
-                                background: swalBackground,
-                                imageUrl: image.locked,
-                                title: 'Lock Room Payment',
-                                text: typeof err === 'string' ? err : 'Failed to create payment. Please try again.',
-                                confirmButtonText: `OK`,
-                                showClass: { popup: 'animate__animated animate__fadeInDown' },
-                                hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+                    if (room_password) {
+                        this.socket
+                            .request('getPeerCounts')
+                            .then(async (res) => {
+                                // The first participant is the presenter and may apply the widget-provided password.
+                                if (isPresenter || res.peerCounts == 1) {
+                                    isPresenter = true;
+                                    this.peer_info.peer_presenter = isPresenter;
+                                    this.getId('isUserPresenter').innerText = isPresenter;
+                                    data.password = room_password;
+                                    this.socket.emit('roomAction', data);
+                                    if (popup) this.roomStatus(action);
+                                }
+                            })
+                            .catch((err) => {
+                                console.log('Get peer counts:', err);
                             });
+                    } else {
+                        Swal.fire({
+                            allowOutsideClick: false,
+                            allowEscapeKey: false,
+                            showDenyButton: true,
+                            background: swalBackground,
+                            imageUrl: image.locked,
+                            input: 'text',
+                            inputPlaceholder: 'Set Room password',
+                            confirmButtonText: `OK`,
+                            denyButtonText: `Cancel`,
+                            showClass: { popup: 'animate__animated animate__fadeInDown' },
+                            hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+                            inputValidator: (pwd) => {
+                                if (!pwd) return 'Please enter the Room password';
+                                this.RoomPassword = pwd;
+                            },
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                data.password = this.RoomPassword;
+                                this.socket.emit('roomAction', data);
+                                this.roomStatus(action);
+                            }
                         });
+                    }
                     break;
                 case 'unlock':
                     this.socket.emit('roomAction', data);
@@ -7485,6 +7423,7 @@ class RoomClient {
     roomPassword(data) {
         switch (data.password) {
             case 'OK':
+                this.peers = new Map(JSON.parse(data.room.peers));
                 this.joinAllowed(data.room);
                 break;
             case 'KO':

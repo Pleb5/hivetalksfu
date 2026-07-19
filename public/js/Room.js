@@ -18,15 +18,7 @@ if (location.href.substr(0, 5) !== 'https') location.href = 'https' + location.h
 // ####################################################
 // STATIC SETTINGS
 // ####################################################
-console.log('Window Location', window.location);
-
 var loggedIn = false;
-
-// Access the functions from the global object
-const { relayInit, generateSecretKey, getPublicKey, SimplePool } = NostrTools;
-
-const nip19 = NostrTools.nip19;
-const pool = new SimplePool();
 
 // default fall back relays
 let defaultRelays = [
@@ -287,89 +279,11 @@ let quill = null;
 // ####################################################
 
 document.addEventListener('DOMContentLoaded', function () {
-    // show nostr dialog on click in profile settings, only show if logged in
-    document.getElementById('nostrButton').addEventListener('click', function () {
-        document.dispatchEvent(new CustomEvent('nlLaunch', { detail: 'edit-profile' }));
-    });
-    console.log('00 ----> init Nostr Login');
     hide(loadingDiv);
-    // check localstorage if actually logged in before
-    console.log('CHECK IF LOGGED IN on Nostr or Previously in LocalStorage');
-
-    (async () => {
-        try {
-            const userInfo = JSON.parse(window.localStorage.getItem('__nostrlogin_accounts'));
-
-            if (userInfo && userInfo.length > 0) {
-                // Do something with the userInfo
-                const user = userInfo[0];
-                peer_name = user.name;
-                if (user.name !== undefined && user.name.length > 30) {
-                    // truncate peer_name to be < 30 chars
-                    peer_name = truncateString(user.name, 29);
-                }
-                peer_pubkey = user.pubkey;
-                window.localStorage.peer_pubkey = user.pubkey;
-
-                //signSampleEvent(peer_pubkey); // send a sample event to the test relay
-
-                peer_npub = nip19.npubEncode(user.pubkey);
-                window.localStorage.peer_npub = peer_npub;
-
-                // if there is no peer_name but we have a pubkey, use first 5 chars
-                if (user.name === undefined) {
-                    // offer to set a username as the first 7 chars of the pubkey
-                    peer_name = truncateString(user.pubkey + '...', 10);
-                }
-                window.localStorage.peer_name = user.name;
-
-                peer_url = user.picture;
-                window.localStorage.peer_url = user.picture;
-                console.log('checkUserInfo :', user.pubkey, user.name, user.picture, peer_npub);
-
-                if (peer_name && peer_pubkey) {
-                    console.log('discovery complete: checkUserInfo: ', peer_name, peer_pubkey, peer_url);
-
-                    // Continue immediately with cached profile; do not block UI on relay fetch.
-                    loggedIn = true;
-                    console.log('checking if loggedIn pre clearInterval: ', loggedIn);
-                    continueNostrLogin('nostr');
-
-                    // Fetch extra profile/ln data in background only when cache is incomplete.
-                    if (!peer_url || !peer_name) {
-                        getInfoAndContinue().catch((error) => {
-                            console.error('Background profile fetch failed:', error);
-                        });
-                    }
-                }
-            } else {
-                // look for peer_name and peer lnaddress from previous local storage session
-                // if not found, offer to set a username
-                if (window.localStorage.peer_name) {
-                    peer_name = window.localStorage.peer_name;
-                    if (window.localStorage.peer_url) {
-                        peer_url = window.localStorage.peer_url;
-                    }
-                    if (window.localStorage.peer_lnaddress) {
-                        peer_lnaddress = window.localStorage.peer_lnaddress;
-                    }
-                    console.log('adopt prior localStorage ', peer_name, peer_pubkey, peer_url);
-                    loggedIn = true; // set logged in is now true
-                    continueNostrLogin('priorlocalStorage'); // And continue with the next step
-                    // if the user doesn't want the above settings, they can change it
-                    // during the continueNostrLogin() flow
-                }
-            }
-        } catch (error) {
-            console.log('Error parsing userInfo:', error);
-        }
-        // if both of the above methods fail then we try nostr or random login
-        if (!loggedIn) {
-            console.log(' no priornostr login, try setting random username');
-            checkInterval = setInterval(checkUserInfo, 1000);
-            nostrLogin();
-        }
-    })();
+    peer_name = peer_name || generateRandomName();
+    window.localStorage.peer_name = peer_name;
+    show(loadingDiv);
+    initClient();
 });
 
 // Check every 500 milliseconds (0.5 second)
@@ -700,43 +614,7 @@ async function checkUserInfo() {
 }
 
 async function isValidLightningAddress(address) {
-    console.log('.... inside isValidLightningAddress: ', address);
-    const parts = address.split('@');
-    if (parts.length !== 2) {
-        return false; // Invalid format
-    }
-    const [username, domain] = parts;
-    if (!username || !domain) {
-        return false; // Invalid format
-    }
-
-    // Construct the URL to query the .well-known endpoint
-    const url = `https://${domain}/.well-known/lnurlp/${username}`;
-
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                Accept: 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            return false; // Not a valid address if the response is not 200
-        }
-
-        const data = await response.json();
-
-        // Check if the response contains required fields for a valid LNURL-pay endpoint
-        if (data.callback && data.maxSendable && data.minSendable && data.metadata) {
-            return true; // Valid Lightning Address
-        } else {
-            return false; // Missing required fields
-        }
-    } catch (error) {
-        console.error('Error validating Lightning Address:', error);
-        return false; // Error during the request
-    }
+    return false;
 }
 
 function isValidLNFormat(address) {
@@ -1423,7 +1301,6 @@ function getPeerName() {
         console.log('Direct join', { name: 'Invalid name' });
         return 'Invalid name';
     }
-    console.log('Direct join', { name: name });
     return name;
 }
 
@@ -1444,7 +1321,6 @@ function getPeerToken() {
     if (token) {
         queryToken = token;
     }
-    console.log('Direct join', { token: queryToken });
     return queryToken;
 }
 
@@ -1456,7 +1332,6 @@ function getRoomPassword() {
         if (queryNoRoomPassword) {
             roomPassword = false;
         }
-        console.log('Direct join', { password: roomPassword });
         return roomPassword;
     }
     return false;
