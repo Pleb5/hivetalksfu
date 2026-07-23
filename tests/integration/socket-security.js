@@ -172,6 +172,25 @@ async function main() {
     assert.equal(admitted.password, 'OK');
     assert.equal(admitted.room.id, 'budabit-socket-security');
 
+    guest.send('roomAction', {
+        action: 'unlock',
+        peer_name: 'Moderator',
+        peer_uuid: 'moderator-uuid',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const presenterSpoofProbe = await within(connect(), 'Presenter-spoof probe connection');
+    await within(
+        presenterSpoofProbe.request('createRoom', { room_id: 'budabit-socket-security' }),
+        'Presenter-spoof room lookup',
+    );
+    const spoofProbeJoin = await within(
+        presenterSpoofProbe.request('join', peer('Probe', 'probe-uuid')),
+        'Presenter-spoof join',
+    );
+    assert.equal(spoofProbeJoin, 'isLocked');
+    console.log('Presenter spoofing denial passed');
+
     const capabilities = await within(guest.request('getRouterRtpCapabilities'), 'Authorized capabilities request');
     assert.ok(Array.isArray(capabilities.codecs));
 
@@ -206,6 +225,7 @@ async function main() {
 
     emptyRoomReplacement.close();
     invalidPrefix.close();
+    presenterSpoofProbe.close();
     guest.close();
     moderator.close();
     console.log('Socket security smoke test passed');

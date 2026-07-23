@@ -2359,8 +2359,7 @@ function startServer() {
                     peer.updatePeerInfo({ type: data.type, status: data.active });
                     break;
                 case 'ejectAll':
-                    const { peer_name, peer_uuid } = data;
-                    const isPresenter = await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
+                    const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
                     if (!isPresenter) return;
                     break;
                 case 'peerAudio':
@@ -2505,12 +2504,7 @@ function startServer() {
 
             if (!roomExists(socket)) return;
 
-            const isPresenter = await isPeerPresenter(
-                socket.room_id,
-                socket.id,
-                data.peer_name,
-                data.peer_uuid,
-            );
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
             log.debug('Room action:', data);
 
             switch (data.action) {
@@ -2626,12 +2620,7 @@ function startServer() {
             ];
 
             if (presenterActions.some((v) => data.action === v)) {
-                const isPresenter = await isPeerPresenter(
-                    socket.room_id,
-                    socket.id,
-                    data.from_peer_name,
-                    data.from_peer_uuid,
-                );
+                const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
                 if (!isPresenter) return;
             }
 
@@ -2668,7 +2657,7 @@ function startServer() {
 
             const room = getRoom(socket);
 
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, data.peer_name, data.peer_uuid);
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
 
             if (!isPresenter) return;
 
@@ -2697,7 +2686,7 @@ function startServer() {
 
             const room = getRoom(socket);
 
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, data.peer_name, data.peer_uuid);
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
 
             if (!isPresenter) return;
 
@@ -3208,8 +3197,8 @@ function startServer() {
             }
 
             const data = checkXSS(dataObject);
-            const { peer_name, peer_uuid, file } = data;
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
+            const { file } = data;
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
             if (!isPresenter) return cb(false);
 
             const room = getRoom(socket);
@@ -3255,8 +3244,8 @@ function startServer() {
             }
 
             const data = checkXSS(dataObject);
-            const { peer_name, peer_uuid, inputVideoURL } = data;
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
+            const { inputVideoURL } = data;
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
             if (!isPresenter) return cb(false);
 
             const room = getRoom(socket);
@@ -3432,13 +3421,14 @@ function startServer() {
 
             const { room, peer } = getRoomAndPeer(socket);
 
-            const { peer_name, peer_uuid } = peer || {};
+            const { peer_name } = peer || {};
 
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
 
             log.debug('[Disconnect] - peer name', peer_name);
 
             room.removePeer(socket.id);
+            if (presenters[socket.room_id]) delete presenters[socket.room_id][socket.id];
 
             if (room.getPeers().size === 0) {
                 //
@@ -3475,13 +3465,14 @@ function startServer() {
 
             const { room, peer } = getRoomAndPeer(socket);
 
-            const { peer_name, peer_uuid } = peer || {};
+            const { peer_name } = peer || {};
 
-            const isPresenter = await isPeerPresenter(socket.room_id, socket.id, peer_name, peer_uuid);
+            const isPresenter = await isPeerPresenter(socket.room_id, socket.id);
 
             log.debug('Exit room', peer_name);
 
             room.removePeer(socket.id);
+            if (presenters[socket.room_id]) delete presenters[socket.room_id][socket.id];
 
             room.broadCast(socket.id, 'removeMe', removeMeData(room, peer_name, isPresenter));
 
@@ -3623,49 +3614,10 @@ function startServer() {
         return JSON.parse(JSON.stringify(value));
     }
 
-    async function isPeerPresenter(room_id, peer_id, peer_name, peer_uuid) {
-        try {
-            if (
-                config.presenters &&
-                config.presenters.join_first &&
-                (!presenters[room_id] || !presenters[room_id][peer_id])
-            ) {
-                // Presenter not in the presenters config list, disconnected, or peer_id changed...
-                for (const [existingPeerID, presenter] of Object.entries(presenters[room_id] || {})) {
-                    if (presenter.peer_name === peer_name) {
-                        log.info('Presenter found', {
-                            room: room_id,
-                            peer_id: existingPeerID,
-                            peer_name: peer_name,
-                        });
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            const isPresenter =
-                (config.presenters &&
-                    config.presenters.join_first &&
-                    typeof presenters[room_id] === 'object' &&
-                    Object.keys(presenters[room_id][peer_id]).length > 1 &&
-                    presenters[room_id][peer_id]['peer_name'] === peer_name &&
-                    presenters[room_id][peer_id]['peer_uuid'] === peer_uuid) ||
-                (config.presenters && config.presenters.list && config.presenters.list.includes(peer_name));
-
-            log.debug('isPeerPresenter', {
-                room_id: room_id,
-                peer_id: peer_id,
-                peer_name: peer_name,
-                peer_uuid: peer_uuid,
-                isPresenter: isPresenter,
-            });
-
-            return isPresenter;
-        } catch (err) {
-            log.error('isPeerPresenter', err);
-            return false;
-        }
+    async function isPeerPresenter(room_id, peer_id) {
+        const isPresenter = presenters[room_id]?.[peer_id]?.is_presenter === true;
+        log.debug('isPeerPresenter', { room_id, peer_id, isPresenter });
+        return isPresenter;
     }
 
     async function isAuthPeer(username, password) {
