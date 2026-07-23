@@ -1817,55 +1817,6 @@ async function shareRoomOnNostr(pubkey) {
 }
 
 // ####################################################
-// SHOW latest Announcements
-// ####################################################
-
-async function showAnnouncements(useNavigator = false) {
-    if (navigator.share && useNavigator) {
-        try {
-            await navigator.share({ url: RoomURL });
-            userLog('info', 'Room Shared successfully', 'top-end');
-        } catch (err) {
-            show();
-        }
-    } else {
-        console.log('share room info on button click');
-        show();
-    }
-    function show() {
-        sound('open');
-
-        Swal.fire({
-            background: swalBackground,
-            position: 'center',
-            title: 'Latest Updates',
-            html: `
-            <div style="text-align: left;">            
-                <p>
-                    From now on, if you want to <b>"Lock a room"</b> you have to pay to lock. 
-                    The goal of Hivetalk is to encourage more open public community discussions and while we value need for privacy, the privacy is not free!
-                </p>
-            </div>`,
-            showDenyButton: false,
-            showCancelButton: true,
-            showConfirmButton: false,
-            cancelButtonColor: 'red',
-            confirmButtonText: `Copy URL`,
-            cancelButtonText: `Close`,
-            showClass: { popup: 'animate__animated animate__fadeInDown' },
-            hideClass: { popup: 'animate__animated animate__fadeOutUp' },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                copyRoomURL();
-            }
-            if (isScreenAllowed) {
-                rc.shareScreen();
-            }
-        });
-    }
-}
-
-// ####################################################
 // SHARE ROOM
 // ####################################################
 

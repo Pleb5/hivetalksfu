@@ -843,17 +843,10 @@ class RoomClient {
 
         console.log('07.2 Participants Count ---->', participantsCount);
 
-        // notify && participantsCount == 1 ? shareRoom() : sound('joined');
-        if (notify && participantsCount == 1) {
-            console.log('share room pop dialog on initial join');
-            //shareRoom();
-            showAnnouncements();
-        } else {
-            if (this.isScreenAllowed) {
-                this.shareScreen();
-            }
-            sound('joined');
+        if (this.isScreenAllowed) {
+            this.shareScreen();
         }
+        sound('joined');
     }
 
     async loadDevice(routerRtpCapabilities) {
