@@ -675,7 +675,8 @@ class RoomClient {
                     // hack...
                     for (let peer of Array.from(this.peers.keys()).filter((id) => id !== this.peer_id)) {
                         let peer_info = this.peers.get(peer).peer_info;
-                        if (peer_info.peer_name == this.peer_name) {
+                        const reconnectingPeer = this.peer_uuid && peer_info.peer_uuid === this.peer_uuid;
+                        if (peer_info.peer_name == this.peer_name && !reconnectingPeer) {
                             console.log('00-WARNING ----> Username already in use');
                             return this.userNameAlreadyInRoom();
                         }
