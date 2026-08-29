@@ -3881,6 +3881,10 @@ function redirectOnLeave() {
     loggedIn = false;
     console.log('Room event: Client leave room');
     // document.dispatchEvent(new Event("nlLogout")); // logout from nostr-login
+    if (window.parent !== window) {
+        window.parent.postMessage({ type: 'budabit-community-call:left' }, '*');
+        return;
+    }
     redirect && redirect.enabled ? openURL(redirect.url) : openURL('/');
 }
 
