@@ -1987,6 +1987,9 @@ let boltavatar = 'https://vanilla.hivetalk.org/images/lnwhitep.png';
 
 function roomIsReady() {
     console.log('06 ----> roomIsReady');
+    if (window.parent !== window) {
+        window.parent.postMessage({ type: 'budabit-community-call:ready', room: room_id }, '*');
+    }
     console.log('Set nostr avatar here in roomIsReady');
     let avatar = peer_info.peer_url;
     console.log('roomIsReady - nostr avatar', avatar);
