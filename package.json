@@ -6,10 +6,11 @@
     "scripts": {
         "test": "mocha tests/*.js",
         "test:socket-security": "node tests/integration/socket-security.js",
+        "test:media": "node tests/integration/media-negotiation.js",
         "start": "node app/src/Server.js",
         "start-dev": "nodemon app/src/Server.js",
         "debug": "DEBUG='mediasoup*' node app/src/Server.js",
-        "compile": "npx browserify public/sfu/MediasoupClientCompile.js -o public/sfu/MediasoupClient.js",
+        "compile": "esbuild public/sfu/MediasoupClientCompile.js --bundle --platform=browser --target=es2022 --outfile=public/sfu/MediasoupClient.js",
         "lint": "npx prettier --write .",
         "docker-build": "docker build --tag hivetalk/sfu:latest .",
         "docker-rmi": "docker images |grep '<none>' |awk '{print $3}' |xargs docker rmi",
@@ -55,7 +56,7 @@
     "author": "Hivetalk Group, Miroslav Pejic",
     "license": "AGPL-3.0",
     "engines": {
-        "node": ">=18"
+        "node": ">=22"
     },
     "dependencies": {
         "@mattermost/client": "^10.0.0",
@@ -78,7 +79,7 @@
         "jsdom": "^25.0.1",
         "jsonwebtoken": "^9.0.2",
         "mediasoup": "3.14.16",
-        "mediasoup-client": "3.7.17",
+        "mediasoup-client": "3.23.2",
         "nodemailer": "^9.0.1",
         "openai": "^4.71.1",
         "qs": "6.15.2",
@@ -91,6 +92,7 @@
         "uuid": "11.1.1"
     },
     "devDependencies": {
+        "esbuild": "0.28.2",
         "mocha": "^10.8.2",
         "node-fetch": "^3.3.2",
         "nodemon": "^3.1.7",

@@ -44,3 +44,29 @@ docker compose --env-file /etc/hivetalk-vanilla/hivetalk.env logs --no-color
 
 Run `tests/integration/socket-security.js` against the local service to verify origin checks, room-prefix checks,
 locked-room authorization, and media denial before password acceptance.
+
+## Browser Media Regression
+
+Use Node.js 22 or newer. `npm run compile` builds the checked-in browser client from the locked
+`mediasoup-client` dependency; the Docker build also runs this step so server and browser versions stay aligned.
+
+```bash
+npm run compile
+npm test
+npm run test:media
+```
+
+Open `http://127.0.0.1:5196` in Chromium and click **Run regression**. This local fixture uses the production
+router codecs and orientation-extension filter, a real loopback mediasoup worker, and synthetic canvas/audio
+tracks. It never requests camera, microphone, or desktop capture. `MEDIASOUP_WORKER_BIN` can point to a local
+worker matching the installed server version if it is not present in `node_modules`.
+
+The six scenarios cover VP8/H.264, camera/audio/screen-first ordering, simultaneous producers, and stopping and
+restarting each producer. Passing requires received RTP for audio and decoded frames for each video producer,
+including after renegotiation. The structured result is available as `window.testResult`.
+
+This reproduces the Chromium RTP extension collision with client 3.7.17: a video-first offer assigns ID 3 to
+`urn:3gpp:video-orientation`, but the old client's answer reuses ID 3 for transport-wide congestion control.
+Client 3.23.2 derives sending parameters from the actual offer and passes the regression with server 3.14.16.
+After deployment, leave and rejoin existing calls to load the rebuilt client and create fresh transports.
+Physical-device permissions, the OS screen picker, and the embedded production flow still need a live retest.

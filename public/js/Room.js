@@ -2875,6 +2875,8 @@ function handleMediaError(mediaType, err, redirectURL = false) {
 
     let errMessage = err;
     let getUserMediaError = true;
+    let title = 'Unable to start media';
+    const rtpExtensionError = String(err.message).includes('RTP extension ID reassignment');
 
     switch (err.name) {
         case 'NotFoundError':
@@ -2891,6 +2893,7 @@ function handleMediaError(mediaType, err, redirectURL = false) {
             break;
         case 'NotAllowedError':
         case 'PermissionDeniedError':
+            title = 'Access denied';
             errMessage = 'Permission denied in browser';
             break;
         case 'TypeError':
@@ -2914,15 +2917,19 @@ function handleMediaError(mediaType, err, redirectURL = false) {
         html += `
         <li>Common: <a href="https://blog.addpipe.com/common-getusermedia-errors" target="_blank">getUserMedia errors</a></li>`;
     }
+    if (rtpExtensionError) {
+        title = 'Call connection error';
+        html += `
+        <li>The browser could not negotiate the media connection. Leave and rejoin the call to retry.
+        If this continues, update your browser and report this error to the call administrator.</li>`;
+    }
     html += `
         </ul>
     `;
 
-    popupHtmlMessage(null, image.forbidden, 'Access denied', html, 'center', redirectURL);
+    popupHtmlMessage(null, image.forbidden, title, html, 'center', redirectURL);
 
-    throw new Error(
-        `Access denied for ${mediaType} device [${err.name}]: ${errMessage} check the common getUserMedia errors: https://blog.addpipe.com/common-getusermedia-errors/`,
-    );
+    throw new Error(`${title} for ${mediaType} [${err.name}]: ${errMessage}`);
 }
 
 function popupHtmlMessage(icon, imageUrl, title, html, position, redirectURL = false, reloadPage = false) {

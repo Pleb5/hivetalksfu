@@ -15,13 +15,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18.20.4'  # LTS
+          node-version: '22.22.2'  # Match the production image
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Copy config file
-        run: cp app/src/config.template.js app/src/config.js
+      - name: Verify browser client bundle
+        run: |
+          npm run compile
+          git diff --exit-code -- public/sfu/MediasoupClient.js
 
       - name: Run unit tests
         run: npm test

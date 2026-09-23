@@ -18,7 +18,8 @@ COPY app ./app
 COPY public ./public
 COPY tests ./tests
 
-RUN npm audit --omit=dev --audit-level=high \
+RUN npm run compile \
+    && npm audit --omit=dev --audit-level=high \
     && npm test \
     && test -x node_modules/mediasoup/worker/out/Release/mediasoup-worker \
     && npm prune --omit=dev

@@ -1551,6 +1551,7 @@ class RoomClient {
         console.log(`Media constraints ${type}:`, mediaConstraints);
 
         let stream;
+        let producer;
         try {
             if (init) {
                 stream = initStream;
@@ -1614,7 +1615,7 @@ class RoomClient {
                 params: params,
             });
 
-            const producer = await this.producerTransport.produce(params);
+            producer = await this.producerTransport.produce(params);
 
             if (!producer) {
                 throw new Error('Producer not found!');
@@ -1732,6 +1733,12 @@ class RoomClient {
             return producer;
         } catch (err) {
             console.error('Produce error:', err);
+
+            // Capture can succeed before SDP negotiation fails. Release every
+            // acquired track (including screen audio) if no producer owns it.
+            if (!producer && stream) {
+                stream.getTracks().forEach((track) => track.stop());
+            }
 
             handleMediaError(type, err);
 

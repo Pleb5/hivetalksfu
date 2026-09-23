@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+    <meta charset="utf-8" />
+    <title>HiveTalk media negotiation regression</title>
+    <h1>HiveTalk media negotiation regression</h1>
+    <p>Loopback SFU with synthetic camera, screen, and microphone tracks. No device access.</p>
+    <button id="run">Run regression</button>
+    <pre id="result" style="white-space: pre-wrap">Ready</pre>
+    <script src="/client.js"></script>
+    <script>
+        const result = document.querySelector('#result');
+        const button = document.querySelector('#run');
+        const twcc = 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01';
+        window.testResult = null;
+
+        async function rpc(action, data = {}) {
+            const response = await fetch('/rpc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, ...data }),
+            });
+            const value = await response.json();
+            if (!response.ok) throw new Error(value.error);
+            return value;
+        }
+
+        async function until(check, label) {
+            const deadline = performance.now() + 8000;
+            while (!(await check())) {
+                if (performance.now() > deadline) throw new Error(`Timed out: ${label}`);
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+        }
+
+        async function scenario(first, codecName) {
+            const device = new mediasoupClient.Device();
+            await device.load({ routerRtpCapabilities: await (await fetch('/capabilities')).json() });
+            const codec = device.rtpCapabilities.codecs.find((codec) => codec.mimeType === codecName);
+            if (!codec) throw new Error(`Missing codec: ${codecName}`);
+            const send = device.createSendTransport(await rpc('transport'));
+            const recv = device.createRecvTransport(await rpc('transport'));
+            for (const transport of [send, recv]) {
+                transport.on('connect', ({ dtlsParameters }, done, fail) => {
+                    rpc('connect', { id: transport.id, dtlsParameters }).then(done, fail);
+                });
+            }
+            send.on('produce', (parameters, done, fail) => {
+                rpc('produce', { id: send.id, ...parameters }).then(done, fail);
+            });
+
+            const context = new AudioContext();
+            const audio = context.createMediaStreamDestination();
+            const oscillator = context.createOscillator();
+            oscillator.connect(audio);
+            oscillator.start();
+            await context.resume();
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 360;
+            const draw = () => {
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#245';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#fff';
+                ctx.font = '24px sans-serif';
+                ctx.fillText(`Synthetic media ${performance.now().toFixed(0)}`, 20, 180);
+            };
+            draw();
+            const video = canvas.captureStream(10);
+            const timer = setInterval(draw, 100);
+            const active = new Map();
+            const steps = [];
+            try {
+                async function start(type) {
+                    const track = (type === 'audio' ? audio.stream : video).getTracks()[0].clone();
+                    if (type === 'screen') track.contentHint = 'detail';
+                    let producer;
+                    try {
+                        producer = await send.produce({
+                            track,
+                            appData: { mediaType: type },
+                            ...(type === 'audio'
+                                ? { codecOptions: { opusStereo: true, opusDtx: true, opusFec: true, opusNack: true } }
+                                : {
+                                      codec,
+                                      encodings: [{ scaleResolutionDownBy: 2 }, { scaleResolutionDownBy: 1 }],
+                                  }),
+                        });
+                    } catch (error) {
+                        track.stop();
+                        throw error;
+                    }
+                    const options = await rpc('consume', {
+                        id: recv.id,
+                        producerId: producer.id,
+                        rtpCapabilities: device.rtpCapabilities,
+                    });
+                    const consumer = await recv.consume(options);
+                    await rpc('resume', { id: consumer.id });
+                    active.set(type, { producer, consumer });
+                    await until(async () => {
+                        const stats = [...(await consumer.getStats()).values()];
+                        return stats.some(
+                            (stat) =>
+                                stat.type === 'inbound-rtp' &&
+                                stat.bytesReceived > 0 &&
+                                (type === 'audio' || stat.framesDecoded > 0),
+                        );
+                    }, `${type} received media`);
+                    steps.push(`${type}: received RTP${type === 'audio' ? '' : ' and decoded video'}`);
+                }
+                async function stop(type) {
+                    const { producer, consumer } = active.get(type);
+                    producer.close();
+                    consumer.close();
+                    await rpc('closeProducer', { id: producer.id });
+                    active.delete(type);
+                }
+                await start(first);
+                for (const type of ['audio', 'camera', 'screen']) {
+                    if (type !== first) await start(type);
+                }
+                for (const type of ['camera', 'screen', 'audio']) {
+                    await stop(type);
+                    await start(type);
+                }
+                const cameraTwccId = active
+                    .get('camera')
+                    .producer.rtpParameters.headerExtensions.find((extension) => extension.uri === twcc)?.id;
+                return { first, codecName, cameraTwccId, steps };
+            } finally {
+                send.close();
+                recv.close();
+                clearInterval(timer);
+                [...audio.stream.getTracks(), ...video.getTracks()].forEach((track) => track.stop());
+                oscillator.stop();
+                await context.close();
+                await rpc('reset');
+            }
+        }
+
+        button.onclick = async () => {
+            button.disabled = true;
+            window.testResult = null;
+            const startedAt = performance.now();
+            const results = [];
+            try {
+                for (const codec of ['video/VP8', 'video/H264']) {
+                    for (const first of ['camera', 'audio', 'screen']) {
+                        result.textContent = `Running ${codec}, ${first} first\n${JSON.stringify(results, null, 2)}`;
+                        results.push(await scenario(first, codec));
+                    }
+                }
+                window.testResult = { passed: true, version: mediasoupClient.version, results };
+            } catch (error) {
+                window.testResult = { passed: false, version: mediasoupClient.version, results, error: String(error) };
+            } finally {
+                window.testResult.elapsedMs = Math.round(performance.now() - startedAt);
+                window.testResult.browser = navigator.userAgent;
+                result.textContent = window.testResult.passed
+                    ? [
+                          `PASS: ${results.length} scenarios, ${results.reduce((count, result) => count + result.steps.length, 0)} producer starts`,
+                          `mediasoup-client ${mediasoupClient.version}; ${window.testResult.elapsedMs}ms`,
+                          ...results.map(
+                              (result) =>
+                                  `${result.codecName}, ${result.first} first: ${result.steps.length} media checks passed (TWCC id ${result.cameraTwccId})`,
+                          ),
+                      ].join('\n')
+                    : JSON.stringify(window.testResult, null, 2);
+                button.disabled = false;
+            }
+        };
+    </script>
+</html>
