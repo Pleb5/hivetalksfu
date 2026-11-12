@@ -1239,19 +1239,19 @@
 
                         <!-- CHAT OPTIONS -->
                         <div class="chat-option-buttons">
-                            <button id="chatTogglePin" class="hidden">
+                            <button id="chatTogglePin" class="hidden" aria-label="Pin chat" title="Pin chat">
                                 <i class="fas fa-map-pin"></i>
                             </button>
-                            <button id="chatMaxButton" class="hidden">
+                            <button id="chatMaxButton" class="hidden" aria-label="Expand chat" title="Expand chat">
                                 <i class="fas fa-expand"></i>
                             </button>
-                            <button id="chatMinButton" class="hidden">
+                            <button id="chatMinButton" class="hidden" aria-label="Restore chat" title="Restore chat">
                                 <i class="fas fa-compress"></i>
                             </button>
                             <!-- CHAT MORE OPTIONS -->
                             <div class="dropdown">
                                 <button class="dropdown-toggle" type="button" id="chatDropDownMenu"
-                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="Chat options">
                                     <i class="fas fa-bars"></i>
                                 </button>
                                 <ul class="dropdown-menu text-start" aria-labelledby="chatDropDownMenu">
@@ -1290,7 +1290,7 @@
                                     </li>
                                 </ul>
                             </div>
-                            <button id="chatCloseButton">
+                            <button id="chatCloseButton" aria-label="Close chat" title="Close chat">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
@@ -1312,10 +1312,9 @@
                 <div class="chat-message clearfix">
                     <!-- CHAT MESSAGE INPUT -->
                     <div class="input-group mb-0 w-100">
-                        <div class="input-group mb-3">
-                            <span class="input-group-text"><i class="fas fa-message"></i></span>
-                            <textarea id="chatMessage" class="form-control" placeholder="Enter text here..."
-                                rows="1"></textarea>
+                        <div class="input-group chat-composer-input">
+                            <textarea id="chatMessage" class="form-control" placeholder="Message the room…"
+                                aria-label="Chat message" rows="2"></textarea>
                             <!-- <input 
                                     id="chatMessage" 
                                     type="text" 
@@ -1326,26 +1325,26 @@
                     </div>
 
                     <!-- CHAT MESSAGE OPTIONS  -->
-                    <div class="mt10">
-                        <button id="chatEmojiButton" class="float-left mr5 hidden">
+                    <div class="chat-composer-actions">
+                        <button id="chatEmojiButton" class="float-left mr5 hidden" aria-label="Emoji" title="Emoji">
                             <i class="fas fa-smile"></i>
                         </button>
-                        <button id="chatMarkdownButton" class="float-left mr5 hidden">
+                        <button id="chatMarkdownButton" class="float-left mr5 hidden" aria-label="Markdown" title="Markdown">
                             <i class="fab fa-markdown"></i>
                         </button>
-                        <button id="chatSpeechStartButton" class="float-left mr5 hidden">
+                        <button id="chatSpeechStartButton" class="float-left mr5 hidden" aria-label="Dictate message" title="Dictate message">
                             <i class="fas fa-microphone-slash"></i>
                         </button>
-                        <button id="chatSpeechStopButton" class="float-left mr5 hidden">
+                        <button id="chatSpeechStopButton" class="float-left mr5 hidden" aria-label="Stop dictation" title="Stop dictation">
                             <i class="fas fa-microphone"></i>
                         </button>
-                        <button id="chatPasteButton" class="float-left mr5 hidden">
+                        <button id="chatPasteButton" class="float-left mr5 hidden" aria-label="Paste message" title="Paste message">
                             <i class="fas fa-paste"></i>
                         </button>
-                        <button id="chatCleanTextButton" class="float-left mr5 hidden">
+                        <button id="chatCleanTextButton" class="float-left mr5 hidden" aria-label="Clear message" title="Clear message">
                             <i class="fas fa-trash"></i>
                         </button>
-                        <button id="chatSendButton" class="float-right hidden">
+                        <button id="chatSendButton" class="float-right hidden" aria-label="Send message" title="Send message">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>

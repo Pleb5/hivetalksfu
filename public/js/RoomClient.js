@@ -671,17 +671,6 @@ class RoomClient {
                 this.peers = new Map(JSON.parse(room.peers));
                 // ##########################################
 
-                if (!peer_info.peer_token) {
-                    // hack...
-                    for (let peer of Array.from(this.peers.keys()).filter((id) => id !== this.peer_id)) {
-                        let peer_info = this.peers.get(peer).peer_info;
-                        const reconnectingPeer = this.peer_uuid && peer_info.peer_uuid === this.peer_uuid;
-                        if (peer_info.peer_name == this.peer_name && !reconnectingPeer) {
-                            console.log('00-WARNING ----> Username already in use');
-                            return this.userNameAlreadyInRoom();
-                        }
-                    }
-                }
                 await this.joinAllowed(room);
             })
             .catch((error) => {
@@ -690,6 +679,15 @@ class RoomClient {
     }
 
     async joinAllowed(room) {
+        this.peers = new Map(JSON.parse(room.peers));
+        const assignedName = this.peers.get(this.peer_id)?.peer_info?.peer_name;
+        if (assignedName) {
+            this.peer_name = assignedName;
+            this.peer_info.peer_name = assignedName;
+            peer_name = assignedName;
+            peer_info.peer_name = assignedName;
+            window.localStorage.peer_name = assignedName;
+        }
         console.log('07 ----> Join Room allowed');
         await this.handleRoomInfo(room);
         const routerRtpCapabilities = await this.socket.request('getRouterRtpCapabilities');
@@ -4466,9 +4464,9 @@ class RoomClient {
         }
     }
 
-    videoMediaContainerPin() {
+    videoMediaContainerPin(width = '75%') {
         this.videoMediaContainer.style.top = 0;
-        this.videoMediaContainer.style.width = '75%';
+        this.videoMediaContainer.style.width = width;
         this.videoMediaContainer.style.height = '100%';
         this.resizeVideoMenuBar();
     }
@@ -4682,8 +4680,8 @@ class RoomClient {
         const isParticipantsListHidden = !this.isPlistOpen();
         chat.style.marginLeft = isParticipantsListHidden ? 0 : '300px';
         chat.style.borderLeft = isParticipantsListHidden ? 'none' : '1px solid rgb(255 255 255 / 32%)';
-        if (this.isChatPinned) elemDisplay(chat.id, isParticipantsListHidden);
-        if (!this.isChatPinned) elemDisplay(chat.id, true);
+        if (this.isChatPinned) elemDisplay(chat.id, isParticipantsListHidden, 'flex');
+        if (!this.isChatPinned) elemDisplay(chat.id, true, 'flex');
         this.toggleChatHistorySize(isParticipantsListHidden && (this.isChatPinned || this.isChatMaximized));
         plist.style.width = this.isChatPinned || this.isMobileDevice ? '100%' : '300px';
         plist.style.position = this.isMobileDevice ? 'fixed' : 'absolute';
@@ -4691,8 +4689,8 @@ class RoomClient {
 
     toggleChatHistorySize(max = true) {
         const chatHistory = this.getId('chatHistory');
-        chatHistory.style.minHeight = max ? 'calc(100vh - 210px)' : '490px';
-        chatHistory.style.maxHeight = max ? 'calc(100vh - 210px)' : '490px';
+        chatHistory.style.minHeight = '0';
+        chatHistory.style.maxHeight = 'none';
     }
 
     toggleChatPin() {
@@ -4739,7 +4737,7 @@ class RoomClient {
         // console.log("chatPin Method: ", this.isChatPinned)
 
         if (!this.isVideoPinned) {
-            this.videoMediaContainerPin();
+            this.videoMediaContainerPin('calc(100% - min(100%, clamp(300px, 25%, 420px)))');
         }
         this.chatPinned();
         this.isChatPinned = true;
@@ -4785,7 +4783,7 @@ class RoomClient {
         chatRoom.style.right = 0;
         chatRoom.style.left = null;
         chatRoom.style.transform = null;
-        document.documentElement.style.setProperty('--msger-width', '25%');
+        document.documentElement.style.setProperty('--msger-width', 'min(100%, clamp(300px, 25%, 420px))');
         document.documentElement.style.setProperty('--msger-height', '100%');
     }
 
@@ -5247,14 +5245,7 @@ class RoomClient {
 
     copyToClipboard(id) {
         const text = this.getId(id).innerText;
-        navigator.clipboard
-            .writeText(text)
-            .then(() => {
-                this.userLog('success', 'Message copied!', 'top-end', 1000);
-            })
-            .catch((err) => {
-                this.userLog('error', err, 'top-end', 6000);
-            });
+        return copyToClipboard(text, false);
     }
 
     formatMsg(msg) {

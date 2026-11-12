@@ -366,16 +366,10 @@ async function getNostrProfile(pubkey, relays) {
                         const lightningAddress = content.lud16 || content.lud06;
                         console.log('relays: ', relays);
 
-                        // incase the relay pool still returns undefined
-                        if (content['name'] === undefined) {
-                            peer_name = truncateString(peer_pubkey + '...', 10);
-                        } else {
-                            peer_name = content['name']; // override default
-                            peer_url = content['image'] || content['picture']; // override default
-                            console.log('content: ', content, 'peer_name', peer_name, 'peer_url', peer_url);
-                            window.localStorage.peer_name = peer_name;
-                            window.localStorage.peer_url = peer_url;
-                        }
+                        peer_name = getNostrDisplayName(pubkey, content);
+                        window.localStorage.peer_name = peer_name;
+                        peer_url = content['image'] || content['picture'];
+                        window.localStorage.peer_url = peer_url;
                         // peer_nip05 = content['nip05']
 
                         if (lightningAddress) {
@@ -471,6 +465,7 @@ async function loadUser() {
 
                     peer_pubkey = pubkey;
                     peer_npub = nip19.npubEncode(pubkey);
+                    peer_name = getNostrDisplayName(pubkey);
                     console.log('npub: ', peer_npub);
                     window.localStorage.peer_pubkey = pubkey;
                     window.localStorage.peer_npub = peer_npub;
@@ -482,11 +477,7 @@ async function loadUser() {
                             const user = userInfo[0];
                             console.log('user from _nostrlogin_accounts: ', user.name);
                             console.log('user picture: ', user.picture);
-                            peer_name = user.name;
-                            if (peer_name !== undefined && peer_name.length > 30) {
-                                // truncate peer_name to be < 30 chars
-                                peer_name = truncateString(user.name, 29);
-                            }
+                            peer_name = getNostrDisplayName(user.pubkey, user);
                             peer_url = user.picture;
                             peer_pubkey = user.pubkey;
                             peer_npub = nip19.npubEncode(user.pubkey);
@@ -494,15 +485,10 @@ async function loadUser() {
                             signSampleEvent(peer_pubkey); // send a sample event to the test relay
 
                             window.localStorage.peer_pubkey = user.pubkey;
-                            window.localStorage.peer_name = user.name;
+                            window.localStorage.peer_name = peer_name;
                             window.localStorage.peer_url = user.picture;
                             window.localStorage.peer_npub = peer_npub;
 
-                            if (user.name === undefined) {
-                                // offer to set a username as the first 7 chars of the pubkey
-                                peer_name = truncateString(user.pubkey + '...', 10);
-                                window.localStorage.peer_name = peer_name;
-                            }
                         } else {
                             console.log('No user info from __nostrlogin_accounts, storing extension pubkey');
                             const accounts = [{ pubkey: pubkey }];
@@ -566,18 +552,14 @@ async function checkUserInfo() {
         if (userInfo && userInfo.length > 0) {
             // Do something with the userInfo
             const user = userInfo[0];
-            peer_name = user.name;
-            if (user.name !== undefined && user.name.length > 30) {
-                // truncate peer_name to be < 30 chars
-                peer_name = truncateString(user.name, 29);
-            }
+            peer_name = getNostrDisplayName(user.pubkey, user);
             peer_url = user.picture;
             peer_pubkey = user.pubkey;
             peer_npub = nip19.npubEncode(user.pubkey);
 
             signSampleEvent(peer_pubkey); // send a sample event to the test relay
 
-            window.localStorage.peer_name = user.name;
+            window.localStorage.peer_name = peer_name;
             window.localStorage.peer_url = user.picture;
             window.localStorage.peer_pubkey = user.pubkey;
             window.localStorage.peer_npub = peer_npub;
@@ -587,11 +569,6 @@ async function checkUserInfo() {
             // we are assuming peer_name exists. if not, then we need to offer
             // option to set a username after 60 sec period of checking and no username
 
-            if (user.name === undefined) {
-                // offer to set a username as the first 7 chars of the pubkey
-                peer_name = truncateString(user.pubkey + '...', 10);
-                window.localStorage.peer_name = peer_name;
-            }
 
             if (peer_name && peer_pubkey) {
                 console.log('discovery complete: checkUserInfo: ', peer_name, peer_pubkey, peer_url);
@@ -1294,6 +1271,14 @@ function isPeerPresenter() {
     return false;
 }
 
+function getNostrDisplayName(pubkey, profile = {}) {
+    const name = [profile.display_name, profile.displayName, profile.name]
+        .find(value => typeof value === 'string' && value.trim());
+    if (name) return filterXSS(name.trim()).slice(0, 56);
+    const npub = nip19.npubEncode(pubkey);
+    return `${npub.slice(0, 12)}…${npub.slice(-6)}`;
+}
+
 function getPeerName() {
     const qs = new URLSearchParams(window.location.search);
     const name = filterXSS(qs.get('name'));
@@ -1890,27 +1875,40 @@ function makeRoomQR() {
 }
 
 function copyRoomURL() {
-    let tmpInput = document.createElement('input');
-    document.body.appendChild(tmpInput);
-    tmpInput.value = RoomURL;
-    tmpInput.select();
-    tmpInput.setSelectionRange(0, 99999); // For mobile devices
-    navigator.clipboard.writeText(tmpInput.value);
-    document.body.removeChild(tmpInput);
-    userLog('info', 'Meeting URL copied to clipboard 👍', 'top-end');
+    return copyToClipboard(RoomURL, false);
 }
 
-function copyToClipboard(txt, showTxt = true) {
-    let tmpInput = document.createElement('input');
-    document.body.appendChild(tmpInput);
-    tmpInput.value = txt;
-    tmpInput.select();
-    tmpInput.setSelectionRange(0, 99999); // For mobile devices
-    navigator.clipboard.writeText(tmpInput.value);
-    document.body.removeChild(tmpInput);
-    showTxt
-        ? userLog('info', `${txt} copied to clipboard 👍`, 'top-end')
-        : userLog('info', `Copied to clipboard 👍`, 'top-end');
+async function copyToClipboard(txt, showTxt = true) {
+    let copied = false;
+    try {
+        await navigator.clipboard.writeText(txt);
+        copied = true;
+    } catch {
+        const focused = document.activeElement;
+        const input = document.createElement('textarea');
+        input.value = txt;
+        input.readOnly = true;
+        input.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+        document.body.appendChild(input);
+        input.select();
+        input.setSelectionRange(0, txt.length);
+        try { copied = document.execCommand('copy'); } catch { /* Show manual copy below. */ }
+        input.remove();
+        focused?.focus({ preventScroll: true });
+    }
+    if (copied) {
+        userLog('info', showTxt ? `${txt} copied to clipboard 👍` : 'Copied to clipboard 👍', 'top-end');
+    } else {
+        Swal.fire({
+            background: swalBackground,
+            title: 'Select and copy',
+            text: 'Automatic copying is unavailable in this browser. Copy the selected text below.',
+            input: 'textarea', inputValue: txt, inputAttributes: { readonly: 'readonly' },
+            confirmButtonText: 'Close',
+            didOpen: () => Swal.getInput()?.select(),
+        });
+    }
+    return copied;
 }
 
 function shareRoomByEmail() {

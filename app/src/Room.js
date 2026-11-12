@@ -478,6 +478,17 @@ module.exports = class Room {
     // ####################################################
 
     addPeer(peer) {
+        // Allocate on the server so simultaneous joins on separate devices cannot
+        // race. The join response carries the allocated name back to the client.
+        const names = new Set([...this.peers.values()].filter(item => item.id !== peer.id).map(item => item.peer_name));
+        const base = peer.peer_name.trim();
+        let name = base;
+        for (let suffix = 1; names.has(name); suffix++) {
+            const ending = `-${suffix}`;
+            name = base.slice(0, 64 - ending.length) + ending;
+        }
+        peer.peer_name = name;
+        peer.peer_info.peer_name = name;
         this.peers.set(peer.id, peer);
     }
 
