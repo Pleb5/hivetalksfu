@@ -698,6 +698,11 @@ class RoomClient {
         console.log('07.3 ----> Get Router Rtp Capabilities codecs: ', this.device.rtpCapabilities.codecs);
         await this.initTransports(this.device);
         // ###################################
+        // Listen before requesting the snapshot: local capture below can take
+        // longer than the reply, dropping every already-present producer.
+        // Transports must be ready, including when admitted from the lobby.
+        this.socket.off('newProducers', this.handleNewProducers);
+        this.socket.on('newProducers', this.handleNewProducers);
         this.socket.emit('getProducers');
         // ###################################
         if (isBroadcastingEnabled) {
@@ -1112,7 +1117,6 @@ class RoomClient {
         this.socket.on('setVideoOff', this.handleSetVideoOff);
         this.socket.on('removeMe', this.handleRemoveMe);
         this.socket.on('refreshParticipantsCount', this.handleRefreshParticipantsCount);
-        this.socket.on('newProducers', this.handleNewProducers);
         this.socket.on('message', this.handleMessage);
         this.socket.on('roomAction', this.handleRoomAction);
         this.socket.on('roomPassword', this.handleRoomPassword);
