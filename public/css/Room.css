@@ -1641,3 +1641,70 @@ z-index:
     - 8 send receive progress
     - 9 room/user emoji
 */
+/* Shared screens have visible actions instead of requiring the hidden tile menu. */
+.shared-screen-tile {
+    position: relative;
+    overflow: hidden;
+}
+.screen-share-actions {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.94);
+    color: #fff;
+}
+.screen-share-actions span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.screen-share-actions button {
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    color: #fff;
+    background: #1e293b;
+    font: 600 14px system-ui;
+}
+.shared-screen-tile.screen-share-focused,
+.shared-screen-tile:fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 10000 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #030712;
+    display: flex !important;
+    flex-direction: column;
+}
+.shared-screen-tile.screen-share-focused .screen-share-actions,
+.shared-screen-tile:fullscreen .screen-share-actions {
+    position: relative;
+    inset: auto;
+    flex-shrink: 0;
+    border-radius: 0;
+}
+.shared-screen-tile.screen-share-focused video,
+.shared-screen-tile:fullscreen video {
+    position: relative !important;
+    flex: 1;
+    min-height: 0;
+    height: 0 !important;
+    width: 100% !important;
+    object-fit: contain !important;
+}

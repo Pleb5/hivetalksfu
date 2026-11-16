@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Shared-screen presentation fixture</title>
+  <link rel="stylesheet" href="/tests/room.css" />
+  <style>
+    body { margin: 0; background: #151c23; color: white; font: 16px system-ui; }
+    .Camera { position: relative; width: min(95vw, 960px); height: 540px; margin: 16px auto; }
+    .Camera video { width: 100%; height: 100%; }
+  </style>
+  <h1>Shared screen controls</h1>
+  <p>Synthetic screen only. No screen picker or media devices.</p>
+  <div class="Camera"><video autoplay muted playsinline></video></div>
+  <p id="notice" role="status"></p>
+  <script src="/tests/room-client.js"></script>
+  <script>
+    const container = document.querySelector(".Camera");
+    const video = container.querySelector("video");
+    const canvas = document.createElement("canvas");
+    canvas.width = 960;
+    canvas.height = 540;
+    const context = canvas.getContext("2d");
+    let count = 0;
+    function draw() {
+      context.fillStyle = "#e2e8f0";
+      context.fillRect(0, 0, 960, 540);
+      context.fillStyle = "#0f172a";
+      context.font = "bold 40px system-ui";
+      context.fillText("Presenter's shared screen", 40, 210);
+      context.font = "24px system-ui";
+      context.fillText("Focus or go full screen with one visible action.", 40, 280);
+      context.fillText(`Synthetic frame ${++count}`, 40, 350);
+    }
+    draw();
+    video.srcObject = canvas.captureStream(5);
+    setInterval(draw, 200);
+    const client = Object.assign(Object.create(RoomClient.prototype), {
+      userLog: (_level, message) => document.querySelector("#notice").textContent = message,
+    });
+    client.addScreenShareActions(container, video, "Presenter");
+  </script>
+</html>

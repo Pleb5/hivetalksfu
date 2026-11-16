@@ -2862,6 +2862,7 @@ class RoomClient {
                 this.handleBAN(ban.id);
                 this.handleKO(ko.id);
                 this.handlePN(elem.id, pn.id, d.id, remoteIsScreen);
+                if (remoteIsScreen) this.addScreenShareActions(d, elem, peer_name);
                 this.handleZV(elem.id, d.id, remotePeerId);
                 this.popupPeerInfo(p.id, peer_info);
                 this.checkPeerInfoStatus(peer_info);
@@ -4230,6 +4231,61 @@ class RoomClient {
     // HANDLE VIDEO | OBJ FIT | CONTROLS | PIN-UNPIN
     // ####################################################
 
+    addScreenShareActions(container, video, peerName) {
+        container.classList.add('shared-screen-tile');
+        const bar = document.createElement('div');
+        bar.className = 'screen-share-actions';
+        const label = document.createElement('span');
+        label.textContent = `${peerName}'s shared screen`;
+        const focus = document.createElement('button');
+        focus.type = 'button';
+        focus.textContent = 'Focus screen';
+        focus.setAttribute('aria-pressed', 'false');
+        const fullscreen = document.createElement('button');
+        fullscreen.type = 'button';
+        fullscreen.textContent = 'Full screen';
+        fullscreen.setAttribute('aria-label', `Full screen shared screen from ${peerName}`);
+        const updateControls = () => {
+            const native = document.fullscreenElement === container;
+            const focused = native || container.classList.contains('screen-share-focused');
+            focus.textContent = focused ? 'Back to call' : 'Focus screen';
+            focus.setAttribute('aria-pressed', String(focused));
+            fullscreen.textContent = native ? 'Exit full screen' : 'Full screen';
+            fullscreen.setAttribute('aria-label', `${native ? 'Exit full screen' : 'Full screen'} shared screen from ${peerName}`);
+        };
+        const setFocused = (active) => {
+            container.classList.toggle('screen-share-focused', active);
+            updateControls();
+        };
+        container.addEventListener('fullscreenchange', updateControls);
+        // These controls stay on the tile: no hidden video-menu interaction.
+        bar.addEventListener('click', (event) => event.stopPropagation());
+        focus.addEventListener('click', async () => {
+            const native = document.fullscreenElement === container;
+            const focused = native || container.classList.contains('screen-share-focused');
+            if (native) {
+                await document.exitFullscreen().catch(() => {});
+            }
+            setFocused(!focused);
+        });
+        fullscreen.addEventListener('click', async () => {
+            try {
+                if (document.fullscreenElement === container) {
+                    await document.exitFullscreen();
+                    return;
+                }
+                if (!container.requestFullscreen) throw new Error('Fullscreen unavailable');
+                await container.requestFullscreen();
+            } catch {
+                setFocused(true);
+                this.userLog('info', 'Browser full screen is unavailable. The shared screen is enlarged inside the call.', 'top-end');
+            }
+        });
+        bar.append(label, focus, fullscreen);
+        container.appendChild(bar);
+        video.style.objectFit = 'contain';
+    }
+
     handleVideoObjectFit(value) {
         document.documentElement.style.setProperty('--videoObjFit', value);
     }
@@ -4260,7 +4316,7 @@ class RoomClient {
                     if (!videoPlayer.classList.contains('videoCircle')) {
                         videoPlayer.style.objectFit = 'contain';
                     }
-                    cam.className = '';
+                    cam.classList.remove('Camera');
                     cam.style.width = '100%';
                     cam.style.height = '100%';
                     this.toggleVideoPin(pinVideoPosition.value);
@@ -4276,7 +4332,7 @@ class RoomClient {
                     }
                     if (!remoteIsScreen && !isBroadcastingEnabled) videoPlayer.style.objectFit = 'var(--videoObjFit)';
                     this.videoPinMediaContainer.removeChild(cam);
-                    cam.className = 'Camera';
+                    cam.classList.add('Camera');
                     this.videoMediaContainer.appendChild(cam);
                     this.removeVideoPinMediaContainer();
                     setColor(btnPn, 'white');

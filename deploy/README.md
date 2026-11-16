@@ -70,3 +70,11 @@ This reproduces the Chromium RTP extension collision with client 3.7.17: a video
 Client 3.23.2 derives sending parameters from the actual offer and passes the regression with server 3.14.16.
 After deployment, leave and rejoin existing calls to load the rebuilt client and create fresh transports.
 Physical-device permissions, the OS screen picker, and the embedded production flow still need a live retest.
+
+## Embedded call presentation
+
+Remote shared-screen tiles have always-visible **Focus screen** and **Full screen** buttons. Focus fills the current call iframe and exposes **Back to call**. Native fullscreen is requested on the tile including its controls, even when the room is already fullscreen. If denied/unsupported, focus is used instead. A new share is never automatically put into browser fullscreen.
+
+The call widget must declare camera, microphone, and display-capture permissions, and every embedding iframe must delegate them and fullscreen. Budabit provides host-level Enlarge/fullscreen controls without reconnecting the call; the widget also has its own fullscreen-call control. Deploy the updated HiveTalk assets and reload/rejoin the call for the new share actions.
+
+`tests/test-ScreenShareActions.js` covers focus/restore, nested fullscreen requests, and denied-fullscreen fallback. `tests/integration/screen-share-controls.html` is a synthetic visual fixture served by the sibling stream widget's presentation server. It does not access a real screen or microphone.
