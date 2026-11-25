@@ -1773,8 +1773,8 @@ class RoomClient {
             constraints = {
                 audio: {
                     autoGainControl: switchAutoGainControl.checked,
-                    echoCancellation: switchNoiseSuppression.checked,
-                    noiseSuppression: switchEchoCancellation.checked,
+                    echoCancellation: switchEchoCancellation.checked,
+                    noiseSuppression: switchNoiseSuppression.checked,
                     sampleRate: parseInt(sampleRateSelect.value),
                     sampleSize: parseInt(sampleSizeSelect.value),
                     channelCount: parseInt(channelCountSelect.value),
@@ -2279,6 +2279,7 @@ class RoomClient {
                 console.log('[addProducer] Video-element-count', this.videoMediaContainer.childElementCount);
                 break;
             case mediaType.audio:
+            case mediaType.audioTab:
                 elem = document.createElement('audio');
                 elem.setAttribute('id', id);
                 elem.setAttribute('name', id + '__localAudio');
@@ -2287,16 +2288,18 @@ class RoomClient {
                 elem.autoplay = true;
                 elem.muted = true;
                 elem.volume = 0;
-                this.myAudioEl = elem;
+                if (type === mediaType.audio) this.myAudioEl = elem;
                 this.localAudioEl.appendChild(elem);
 
                 await this.attachMediaStream(elem, stream, type, 'Producer');
 
-                const audioConsumerId = this.peer_id + '___pVolume';
-                this.audioConsumers.set(audioConsumerId, elem.id);
+                if (type === mediaType.audio) {
+                    const audioConsumerId = this.peer_id + '___pVolume';
+                    this.audioConsumers.set(audioConsumerId, elem.id);
 
-                this.setAV(elem.id, audioConsumerId, this.peer_info.peer_audio_volume);
-                this.handlePV(elem.id + '___' + audioConsumerId);
+                    this.setAV(elem.id, audioConsumerId, this.peer_info.peer_audio_volume);
+                    this.handlePV(elem.id + '___' + audioConsumerId);
+                }
 
                 console.log('[addProducer] audio-element-count', this.localAudioEl.childElementCount);
                 break;
@@ -2391,15 +2394,19 @@ class RoomClient {
 
         console.log('[closeProducer] - PRODUCER LABEL', this.producerLabel);
 
-        if (type !== mediaType.audio) {
+        const isAudioProducer = type === mediaType.audio || type === mediaType.audioTab;
+
+        if (!isAudioProducer) {
             const elem = this.getId(producer_id);
             const d = this.getId(producer_id + '__video');
             const vb = this.getId(producer_id + '__vb');
-            elem.srcObject.getTracks().forEach(function (track) {
-                track.stop();
-            });
-            d.parentNode.removeChild(d);
-            vb.parentNode.removeChild(vb);
+            if (elem?.srcObject) {
+                elem.srcObject.getTracks().forEach(function (track) {
+                    track.stop();
+                });
+            }
+            if (d?.parentNode) d.parentNode.removeChild(d);
+            if (vb?.parentNode) vb.parentNode.removeChild(vb);
 
             //alert(this.pinnedVideoPlayerId + '==' + producer_id);
             if (this.isVideoPinned && this.pinnedVideoPlayerId == producer_id) {
@@ -2410,17 +2417,25 @@ class RoomClient {
                 });
             }
 
+            if (type === mediaType.screen && this.producerLabel.has(mediaType.audioTab)) {
+                this.closeProducer(mediaType.audioTab);
+            }
+
             handleAspectRatio();
 
             console.log('[producerClose] Video-element-count', this.videoMediaContainer.childElementCount);
         }
 
-        if (type === mediaType.audio) {
-            const au = this.getName(producer_id + '__localAudio');
-            au.srcObject.getTracks().forEach(function (track) {
-                track.stop();
-            });
-            this.localAudioEl.removeChild(au);
+        if (isAudioProducer) {
+            const au = this.getId(producer_id) || this.getName(producer_id + '__localAudio');
+            if (au) {
+                if (au.srcObject) {
+                    au.srcObject.getTracks().forEach(function (track) {
+                        track.stop();
+                    });
+                }
+                if (au.parentNode) au.parentNode.removeChild(au);
+            }
             console.log('[producerClose] Audio-element-count', this.localAudioEl.childElementCount);
         }
 
@@ -2467,7 +2482,7 @@ class RoomClient {
 
             console.log('[produceScreenAudio] - PRODUCER LABEL', this.producerLabel);
 
-            const sa = await this.handleProducer(producerSa.id, mediaType.audio, stream);
+            const sa = await this.handleProducer(producerSa.id, mediaType.audioTab, stream);
 
             producerSa.on('trackended', () => {
                 console.log('Producer Screen audio track ended', { id: producerSa.id });
@@ -2476,20 +2491,24 @@ class RoomClient {
 
             producerSa.on('transportclose', () => {
                 console.log('Producer Screen audio transport close', { id: producerSa.id });
-                sa.srcObject.getTracks().forEach(function (track) {
-                    track.stop();
-                });
-                sa.parentNode.removeChild(sa);
+                if (sa?.srcObject) {
+                    sa.srcObject.getTracks().forEach(function (track) {
+                        track.stop();
+                    });
+                }
+                if (sa?.parentNode) sa.parentNode.removeChild(sa);
                 console.log('[transportClose] audio-element-count', this.localAudioEl.childElementCount);
                 this.closeProducer(mediaType.audioTab);
             });
 
             producerSa.on('close', () => {
                 console.log('Closing Screen audio producer', { id: producerSa.id });
-                sa.srcObject.getTracks().forEach(function (track) {
-                    track.stop();
-                });
-                sa.parentNode.removeChild(sa);
+                if (sa?.srcObject) {
+                    sa.srcObject.getTracks().forEach(function (track) {
+                        track.stop();
+                    });
+                }
+                if (sa?.parentNode) sa.parentNode.removeChild(sa);
                 console.log('[closingProducer] audio-element-count', this.localAudioEl.childElementCount);
                 this.closeProducer(mediaType.audioTab);
             });
@@ -2924,9 +2943,11 @@ class RoomClient {
 
                 await this.attachMediaStream(elem, stream, type, 'Consumer');
 
-                // Store audio consumer and set volume
+                // Store primary audio consumer without overwriting an active mic consumer with tab audio
                 const audioConsumerId = remotePeerId + '___pVolume';
-                this.audioConsumers.set(audioConsumerId, id);
+                if (!this.audioConsumers.has(audioConsumerId)) {
+                    this.audioConsumers.set(audioConsumerId, id);
+                }
 
                 // Use helper function to set audio volume
                 this.setAV(id, audioConsumerId, remotePeerAudioVolume, true);
