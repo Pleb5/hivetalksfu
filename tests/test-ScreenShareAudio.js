@@ -120,4 +120,64 @@ describe('Screen share audio lifecycle', () => {
         assert.equal(constraints.audio.echoCancellation, true);
         assert.equal(constraints.audio.noiseSuppression, false);
     });
+
+    it('allows participant video fullscreen even while room fullscreen is active, falling back to full-viewport tile focus when nested fullscreen rejects', async () => {
+        const classes = new Set(['Camera']);
+        const appended = [];
+        const doc = {
+            fullscreenElement: { id: 'room-root' },
+            exitFullscreen: async () => {
+                doc.fullscreenElement = null;
+            },
+            querySelectorAll: () => [],
+            createElement: (tag) => ({
+                tagName: tag.toUpperCase(),
+                type: '',
+                className: '',
+                textContent: '',
+                listeners: {},
+                addEventListener(ev, fn) {
+                    this.listeners[ev] = fn;
+                },
+            }),
+        };
+        const RoomClient = loadRoomClient({ document: doc });
+        const tile = {
+            classList: {
+                contains: (c) => classes.has(c),
+                toggle: (c, force) => {
+                    if (force === undefined) {
+                        if (classes.has(c)) classes.delete(c);
+                        else classes.add(c);
+                    } else if (force) classes.add(c);
+                    else classes.delete(c);
+                },
+                add: (c) => classes.add(c),
+                remove: (c) => classes.delete(c),
+            },
+            querySelector: () => null,
+            appendChild: (node) => appended.push(node),
+        };
+        const video = {
+            closest: (sel) => (sel === '.Camera' ? tile : null),
+            requestFullscreen: async () => {
+                throw new Error('Blocked inside fullscreen parent iframe');
+            },
+        };
+        const client = Object.assign(Object.create(RoomClient.prototype), {
+            isDocumentOnFullScreen: true,
+            isVideoOnFullScreen: false,
+            userLog() {},
+        });
+
+        await client.toggleFullScreen(video);
+        assert.equal(classes.has('tile-focused'), true);
+        assert.equal(client.isVideoOnFullScreen, true);
+        assert.equal(appended.length, 1);
+
+        // Second click exits tile focus cleanly without exiting room fullscreen
+        await client.toggleFullScreen(video);
+        assert.equal(classes.has('tile-focused'), false);
+        assert.equal(client.isVideoOnFullScreen, false);
+    });
 });

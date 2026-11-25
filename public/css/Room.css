@@ -1678,7 +1678,8 @@ z-index:
     font: 600 14px system-ui;
 }
 .shared-screen-tile.screen-share-focused,
-.shared-screen-tile:fullscreen {
+.shared-screen-tile:fullscreen,
+.Camera.tile-focused {
     position: fixed !important;
     inset: 0 !important;
     z-index: 10000 !important;
@@ -1700,11 +1701,30 @@ z-index:
     border-radius: 0;
 }
 .shared-screen-tile.screen-share-focused video,
-.shared-screen-tile:fullscreen video {
+.shared-screen-tile:fullscreen video,
+.Camera.tile-focused video {
     position: relative !important;
     flex: 1;
     min-height: 0;
     height: 0 !important;
     width: 100% !important;
     object-fit: contain !important;
+}
+.tile-focus-exit {
+    display: none;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10001;
+    padding: 8px 14px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.92);
+    color: #fff;
+    font: 600 14px system-ui;
+    cursor: pointer;
+}
+.Camera.tile-focused .tile-focus-exit {
+    display: inline-flex;
+    align-items: center;
 }
