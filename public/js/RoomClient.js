@@ -4233,19 +4233,19 @@ class RoomClient {
         try {
             if (element.requestFullscreen) {
                 await element.requestFullscreen();
-                return true;
+                return this.getFullscreenElement() === element;
             }
             if (element.mozRequestFullScreen) {
                 await element.mozRequestFullScreen();
-                return true;
+                return this.getFullscreenElement() === element;
             }
             if (element.webkitRequestFullscreen) {
                 await element.webkitRequestFullscreen();
-                return true;
+                return this.getFullscreenElement() === element;
             }
             if (element.msRequestFullscreen) {
                 await element.msRequestFullscreen();
-                return true;
+                return this.getFullscreenElement() === element;
             }
             if (element.webkitEnterFullscreen) {
                 // iOS Safari
