@@ -4169,13 +4169,18 @@ class RoomClient {
 
     setTileFocused(tile, active) {
         if (!tile || !tile.classList) return;
-        if (active && typeof document !== 'undefined' && document.querySelectorAll) {
-            document.querySelectorAll('.Camera.tile-focused').forEach((other) => {
-                if (other !== tile) other.classList.remove('tile-focused');
+        const isActive = Boolean(active);
+        if (isActive && typeof document !== 'undefined' && document.querySelectorAll) {
+            document.querySelectorAll('.tile-focused').forEach((other) => {
+                if (other !== tile) {
+                    other.classList.remove('tile-focused');
+                    other.parentElement?.classList?.remove('has-focused-tile');
+                }
             });
         }
-        tile.classList.toggle('tile-focused', Boolean(active));
-        if (active && !tile.classList.contains('shared-screen-tile') && !tile.querySelector?.('.tile-focus-exit')) {
+        tile.classList.toggle('tile-focused', isActive);
+        tile.parentElement?.classList?.toggle('has-focused-tile', isActive);
+        if (isActive && !tile.classList.contains('shared-screen-tile') && !tile.querySelector?.('.tile-focus-exit')) {
             const exitBtn = document.createElement('button');
             exitBtn.type = 'button';
             exitBtn.className = 'tile-focus-exit';
@@ -4186,12 +4191,21 @@ class RoomClient {
             });
             tile.appendChild(exitBtn);
         }
-        this.isVideoOnFullScreen = Boolean(active);
+        this.isVideoOnFullScreen = isActive;
+    }
+
+    findVideoTile(elem) {
+        if (!elem) return null;
+        if (typeof elem.closest === 'function') {
+            const matched = elem.closest('.Camera, .shared-screen-tile, [id$="__video"]');
+            if (matched) return matched;
+        }
+        return elem.parentElement || null;
     }
 
     async toggleFullScreen(elem = null) {
         const element = elem ? elem : document.documentElement;
-        const tile = elem && typeof elem.closest === 'function' ? elem.closest('.Camera') : null;
+        const tile = this.findVideoTile(elem);
         const currentFs = this.getFullscreenElement();
 
         if (tile && tile.classList && tile.classList.contains('tile-focused')) {
@@ -4200,6 +4214,7 @@ class RoomClient {
         }
         if (tile && tile.classList && tile.classList.contains('screen-share-focused')) {
             tile.classList.remove('screen-share-focused');
+            tile.parentElement?.classList?.remove('has-focused-tile');
             this.isVideoOnFullScreen = false;
             return;
         }
@@ -4216,6 +4231,7 @@ class RoomClient {
         if (!entered && tile) {
             if (tile.classList && tile.classList.contains('shared-screen-tile')) {
                 tile.classList.add('screen-share-focused');
+                tile.parentElement?.classList?.add('has-focused-tile');
                 this.isVideoOnFullScreen = true;
             } else {
                 this.setTileFocused(tile, true);
@@ -4341,6 +4357,7 @@ class RoomClient {
         };
         const setFocused = (active) => {
             container.classList.toggle('screen-share-focused', active);
+            container.parentElement?.classList?.toggle('has-focused-tile', Boolean(active));
             updateControls();
         };
         container.addEventListener('fullscreenchange', updateControls);

@@ -159,7 +159,7 @@ describe('Screen share audio lifecycle', () => {
             appendChild: (node) => appended.push(node),
         };
         const video = {
-            closest: (sel) => (sel === '.Camera' ? tile : null),
+            closest: (sel) => (sel.includes('.Camera') ? tile : null),
             requestFullscreen: async () => {
                 throw new Error('Blocked inside fullscreen parent iframe');
             },
@@ -179,5 +179,62 @@ describe('Screen share audio lifecycle', () => {
         await client.toggleFullScreen(video);
         assert.equal(classes.has('tile-focused'), false);
         assert.equal(client.isVideoOnFullScreen, false);
+    });
+
+    it('focuses pinned screen-share tiles even after handlePN removes the Camera class and raises pin container stacking', async () => {
+        const tileClasses = new Set(); // Camera class removed by handlePN when pinned!
+        const parentClasses = new Set();
+        const doc = {
+            fullscreenElement: null,
+            querySelectorAll: () => [],
+            createElement: (tag) => ({
+                tagName: tag.toUpperCase(),
+                type: '',
+                className: '',
+                textContent: '',
+                addEventListener() {},
+            }),
+        };
+        const RoomClient = loadRoomClient({ document: doc });
+        const pinContainer = {
+            id: 'videoPinMediaContainer',
+            classList: {
+                toggle: (c, force) => (force ? parentClasses.add(c) : parentClasses.delete(c)),
+                add: (c) => parentClasses.add(c),
+                remove: (c) => parentClasses.delete(c),
+            },
+        };
+        const tile = {
+            id: 'prod-screen-1__video',
+            parentElement: pinContainer,
+            classList: {
+                contains: (c) => tileClasses.has(c),
+                toggle: (c, force) => (force ? tileClasses.add(c) : tileClasses.delete(c)),
+                add: (c) => tileClasses.add(c),
+                remove: (c) => tileClasses.delete(c),
+            },
+            querySelector: () => null,
+            appendChild() {},
+        };
+        const video = {
+            parentElement: tile,
+            closest: (sel) => (sel.includes('[id$="__video"]') ? tile : null),
+            requestFullscreen: async () => {
+                // Simulate browser silently ignoring nested fullscreen without rejecting
+            },
+        };
+        const client = Object.assign(Object.create(RoomClient.prototype), {
+            isDocumentOnFullScreen: false,
+            isVideoOnFullScreen: false,
+            userLog() {},
+        });
+
+        await client.toggleFullScreen(video);
+        assert.equal(tileClasses.has('tile-focused'), true);
+        assert.equal(parentClasses.has('has-focused-tile'), true);
+
+        await client.toggleFullScreen(video);
+        assert.equal(tileClasses.has('tile-focused'), false);
+        assert.equal(parentClasses.has('has-focused-tile'), false);
     });
 });
