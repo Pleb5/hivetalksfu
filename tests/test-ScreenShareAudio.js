@@ -121,15 +121,25 @@ describe('Screen share audio lifecycle', () => {
         assert.equal(constraints.audio.noiseSuppression, false);
     });
 
-    it('allows participant video fullscreen even while room fullscreen is active, falling back to full-viewport tile focus when nested fullscreen rejects', async () => {
+    it('uses full-viewport tile focus directly when room fullscreen is already active without nested requestFullscreen', async () => {
         const classes = new Set(['Camera']);
+        const menuBarClasses = new Set(['videoMenuBar']);
         const appended = [];
+        let nestedRequestCalls = 0;
+        let exitFullscreenCalls = 0;
+        const menuBar = {
+            classList: {
+                add: (c) => menuBarClasses.add(c),
+                contains: (c) => menuBarClasses.has(c),
+            },
+        };
         const doc = {
             fullscreenElement: { id: 'room-root' },
             exitFullscreen: async () => {
+                exitFullscreenCalls += 1;
                 doc.fullscreenElement = null;
             },
-            querySelectorAll: () => [],
+            querySelectorAll: (sel) => (sel === '.videoMenuBar' ? [menuBar] : []),
             createElement: (tag) => ({
                 tagName: tag.toUpperCase(),
                 type: '',
@@ -161,7 +171,7 @@ describe('Screen share audio lifecycle', () => {
         const video = {
             closest: (sel) => (sel.includes('.Camera') ? tile : null),
             requestFullscreen: async () => {
-                throw new Error('Blocked inside fullscreen parent iframe');
+                nestedRequestCalls += 1;
             },
         };
         const client = Object.assign(Object.create(RoomClient.prototype), {
@@ -171,14 +181,72 @@ describe('Screen share audio lifecycle', () => {
         });
 
         await client.toggleFullScreen(video);
+        assert.equal(nestedRequestCalls, 0);
+        assert.equal(exitFullscreenCalls, 0);
         assert.equal(classes.has('tile-focused'), true);
+        assert.equal(menuBarClasses.has('hidden'), true);
         assert.equal(client.isVideoOnFullScreen, true);
         assert.equal(appended.length, 1);
 
         // Second click exits tile focus cleanly without exiting room fullscreen
         await client.toggleFullScreen(video);
+        assert.equal(exitFullscreenCalls, 0);
         assert.equal(classes.has('tile-focused'), false);
         assert.equal(client.isVideoOnFullScreen, false);
+    });
+
+    it('uses full-viewport tile focus directly when embedded in an already-fullscreen parent iframe', async () => {
+        const classes = new Set(['Camera']);
+        let nestedRequestCalls = 0;
+        const fakeSelf = {};
+        const fakeTop = {};
+        const doc = {
+            fullscreenElement: null,
+            querySelectorAll: () => [],
+            createElement: (tag) => ({
+                tagName: tag.toUpperCase(),
+                type: '',
+                className: '',
+                textContent: '',
+                addEventListener() {},
+            }),
+        };
+        const RoomClient = loadRoomClient({
+            document: doc,
+            window: {
+                self: fakeSelf,
+                top: fakeTop,
+                innerWidth: 1920,
+                innerHeight: 1110,
+                screen: { width: 1920, height: 1200 },
+            },
+        });
+        const tile = {
+            classList: {
+                contains: (c) => classes.has(c),
+                toggle: (c, force) => (force ? classes.add(c) : classes.delete(c)),
+                add: (c) => classes.add(c),
+                remove: (c) => classes.delete(c),
+            },
+            querySelector: () => null,
+            appendChild() {},
+        };
+        const video = {
+            closest: (sel) => (sel.includes('.Camera') ? tile : null),
+            requestFullscreen: async () => {
+                nestedRequestCalls += 1;
+            },
+        };
+        const client = Object.assign(Object.create(RoomClient.prototype), {
+            isDocumentOnFullScreen: false,
+            isVideoOnFullScreen: false,
+            userLog() {},
+        });
+
+        await client.toggleFullScreen(video);
+        assert.equal(nestedRequestCalls, 0);
+        assert.equal(classes.has('tile-focused'), true);
+        assert.equal(client.isVideoOnFullScreen, true);
     });
 
     it('focuses pinned screen-share tiles even after handlePN removes the Camera class and raises pin container stacking', async () => {

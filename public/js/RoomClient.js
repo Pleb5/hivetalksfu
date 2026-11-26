@@ -4140,6 +4140,30 @@ class RoomClient {
                 this.isDocumentOnFullScreen = false;
             }
         });
+        if (!this._tileFocusEventsBound) {
+            this._tileFocusEventsBound = true;
+            if (typeof window !== 'undefined' && window.addEventListener) {
+                window.addEventListener('message', (event) => {
+                    if (event.source !== window.parent) return;
+                    if (event.data && event.data.type === 'budabit-community-call:fullscreen') {
+                        this.isParentFullScreen = Boolean(event.data.active);
+                    }
+                });
+            }
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                const focused = document.querySelector?.('.tile-focused, .screen-share-focused');
+                if (!focused) return;
+                if (focused.classList.contains('tile-focused')) {
+                    this.setTileFocused(focused, false);
+                } else {
+                    focused.classList.remove('screen-share-focused');
+                    focused.parentElement?.classList?.remove('has-focused-tile');
+                    focused._syncScreenShareControls?.();
+                    this.isVideoOnFullScreen = false;
+                }
+            });
+        }
     }
 
     toggleRoomFullScreen() {
@@ -4165,6 +4189,47 @@ class RoomClient {
             document.msFullscreenElement ||
             null
         );
+    }
+
+    isEmbeddedFullViewport() {
+        try {
+            if (typeof window === 'undefined' || window.self === window.top) return false;
+            if (!window.screen || !window.screen.width || !window.screen.height) return false;
+            return (
+                window.innerWidth >= window.screen.width - 120 &&
+                window.innerHeight >= window.screen.height - 160
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    shouldUseViewportTileFocus(tile, element, currentFs) {
+        if (!tile) return false;
+        if (currentFs && currentFs !== element && currentFs !== tile) return true;
+        if (this.isParentFullScreen) return true;
+        return this.isEmbeddedFullViewport();
+    }
+
+    hideVideoMenuBars() {
+        if (typeof document !== 'undefined' && document.querySelectorAll) {
+            document.querySelectorAll('.videoMenuBar').forEach((bar) => {
+                bar.classList?.add('hidden');
+            });
+        }
+    }
+
+    activateTileFocus(tile) {
+        if (!tile || !tile.classList) return;
+        this.hideVideoMenuBars();
+        if (tile.classList.contains('shared-screen-tile')) {
+            tile.classList.add('screen-share-focused');
+            tile.parentElement?.classList?.add('has-focused-tile');
+            tile._syncScreenShareControls?.();
+            this.isVideoOnFullScreen = true;
+        } else {
+            this.setTileFocused(tile, true);
+        }
     }
 
     setTileFocused(tile, active) {
@@ -4215,6 +4280,7 @@ class RoomClient {
         if (tile && tile.classList && tile.classList.contains('screen-share-focused')) {
             tile.classList.remove('screen-share-focused');
             tile.parentElement?.classList?.remove('has-focused-tile');
+            tile._syncScreenShareControls?.();
             this.isVideoOnFullScreen = false;
             return;
         }
@@ -4225,17 +4291,16 @@ class RoomClient {
             return;
         }
 
-        // If the whole room is already fullscreen (e.g. room fullscreen or parent iframe fullscreen),
-        // prefer entering native fullscreen on the selected video/tile, and fall back to full-viewport focus.
+        // When the call UI or parent frame is already fullscreen, expand the selected tile directly
+        // across the fullscreen viewport instead of fighting nested browser requestFullscreen().
+        if (this.shouldUseViewportTileFocus(tile, element, currentFs)) {
+            this.activateTileFocus(tile);
+            return;
+        }
+
         const entered = await this.goInFullscreen(element);
         if (!entered && tile) {
-            if (tile.classList && tile.classList.contains('shared-screen-tile')) {
-                tile.classList.add('screen-share-focused');
-                tile.parentElement?.classList?.add('has-focused-tile');
-                this.isVideoOnFullScreen = true;
-            } else {
-                this.setTileFocused(tile, true);
-            }
+            this.activateTileFocus(tile);
         } else if (elem === null) {
             this.isVideoOnFullScreen = !entered;
         }
@@ -4356,10 +4421,12 @@ class RoomClient {
             fullscreen.setAttribute('aria-label', `${native ? 'Exit full screen' : 'Full screen'} shared screen from ${peerName}`);
         };
         const setFocused = (active) => {
+            if (active) this.hideVideoMenuBars();
             container.classList.toggle('screen-share-focused', active);
             container.parentElement?.classList?.toggle('has-focused-tile', Boolean(active));
             updateControls();
         };
+        container._syncScreenShareControls = updateControls;
         container.addEventListener('fullscreenchange', updateControls);
         // These controls stay on the tile: no hidden video-menu interaction.
         bar.addEventListener('click', (event) => event.stopPropagation());
@@ -4379,6 +4446,10 @@ class RoomClient {
                 }
                 if (container.classList.contains('screen-share-focused')) {
                     setFocused(false);
+                    return;
+                }
+                if (this.shouldUseViewportTileFocus(container, container, this.getFullscreenElement())) {
+                    setFocused(true);
                     return;
                 }
                 if (!container.requestFullscreen) throw new Error('Fullscreen unavailable');

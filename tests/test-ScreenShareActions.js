@@ -70,14 +70,15 @@ describe('visible screen-share controls', () => {
         f.dom.window.close();
     });
 
-    it('requests fullscreen on the screen tile even if the room is already fullscreen', async () => {
+    it('focuses the screen tile across the viewport when the room is already fullscreen', async () => {
         const f = setup();
         Object.defineProperty(f.document, 'fullscreenElement', { value: f.document.documentElement });
         let requested = false;
         f.container.requestFullscreen = async () => { requested = true; };
         f.container.querySelectorAll('button')[1].click();
         await new Promise(setImmediate);
-        assert.equal(requested, true);
+        assert.equal(requested, false);
+        assert.ok(f.container.classList.contains('screen-share-focused'));
         assert.equal(f.messages.length, 0);
         f.dom.window.close();
     });
