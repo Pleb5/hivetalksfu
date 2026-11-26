@@ -4310,23 +4310,39 @@ class RoomClient {
         return this.getFullscreenElement() !== null;
     }
 
-    async goInFullscreen(element) {
+    async goInFullscreen(element, timeoutMs = 450) {
+        const waitForFullscreen = async (requestPromise) => {
+            if (requestPromise && typeof requestPromise.then === 'function') {
+                const settled = requestPromise.then(
+                    () => true,
+                    () => false,
+                );
+                let timerId = null;
+                try {
+                    await Promise.race([
+                        settled,
+                        new Promise((resolve) => {
+                            timerId = setTimeout(() => resolve(false), timeoutMs);
+                        }),
+                    ]);
+                } finally {
+                    if (timerId !== null) clearTimeout(timerId);
+                }
+            }
+            return this.getFullscreenElement() === element;
+        };
         try {
             if (element.requestFullscreen) {
-                await element.requestFullscreen();
-                return this.getFullscreenElement() === element;
+                return await waitForFullscreen(element.requestFullscreen());
             }
             if (element.mozRequestFullScreen) {
-                await element.mozRequestFullScreen();
-                return this.getFullscreenElement() === element;
+                return await waitForFullscreen(element.mozRequestFullScreen());
             }
             if (element.webkitRequestFullscreen) {
-                await element.webkitRequestFullscreen();
-                return this.getFullscreenElement() === element;
+                return await waitForFullscreen(element.webkitRequestFullscreen());
             }
             if (element.msRequestFullscreen) {
-                await element.msRequestFullscreen();
-                return this.getFullscreenElement() === element;
+                return await waitForFullscreen(element.msRequestFullscreen());
             }
             if (element.webkitEnterFullscreen) {
                 // iOS Safari
@@ -4452,8 +4468,11 @@ class RoomClient {
                     setFocused(true);
                     return;
                 }
-                if (!container.requestFullscreen) throw new Error('Fullscreen unavailable');
-                await container.requestFullscreen();
+                const entered = await this.goInFullscreen(container);
+                if (!entered) {
+                    setFocused(true);
+                    this.userLog('info', 'Browser full screen is unavailable. The shared screen is enlarged inside the call.', 'top-end');
+                }
             } catch {
                 setFocused(true);
                 this.userLog('info', 'Browser full screen is unavailable. The shared screen is enlarged inside the call.', 'top-end');

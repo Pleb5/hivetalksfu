@@ -305,4 +305,59 @@ describe('Screen share audio lifecycle', () => {
         assert.equal(tileClasses.has('tile-focused'), false);
         assert.equal(parentClasses.has('has-focused-tile'), false);
     });
+
+    it('falls back to full-viewport tile focus when requestFullscreen hangs without settling', async () => {
+        const tileClasses = new Set();
+        const parentClasses = new Set();
+        const doc = {
+            fullscreenElement: null,
+            querySelectorAll: () => [],
+            createElement: (tag) => ({
+                tagName: tag.toUpperCase(),
+                type: '',
+                className: '',
+                textContent: '',
+                addEventListener() {},
+            }),
+        };
+        const RoomClient = loadRoomClient({ document: doc });
+        const pinContainer = {
+            id: 'videoPinMediaContainer',
+            classList: {
+                toggle: (c, force) => (force ? parentClasses.add(c) : parentClasses.delete(c)),
+                add: (c) => parentClasses.add(c),
+                remove: (c) => parentClasses.delete(c),
+            },
+        };
+        const tile = {
+            id: 'prod-screen-hang__video',
+            parentElement: pinContainer,
+            classList: {
+                contains: (c) => tileClasses.has(c),
+                toggle: (c, force) => (force ? tileClasses.add(c) : tileClasses.delete(c)),
+                add: (c) => tileClasses.add(c),
+                remove: (c) => tileClasses.delete(c),
+            },
+            querySelector: () => null,
+            appendChild() {},
+        };
+        const video = {
+            parentElement: tile,
+            closest: (sel) => (sel.includes('[id$="__video"]') ? tile : null),
+            // Real Chromium bug observed inside fullscreen parent iframe: promise never settles
+            requestFullscreen: () => new Promise(() => {}),
+        };
+        const client = Object.assign(Object.create(RoomClient.prototype), {
+            isDocumentOnFullScreen: false,
+            isVideoOnFullScreen: false,
+            userLog() {},
+        });
+        const origGoIn = client.goInFullscreen.bind(client);
+        client.goInFullscreen = (el) => origGoIn(el, 25);
+
+        await client.toggleFullScreen(video);
+        assert.equal(tileClasses.has('tile-focused'), true);
+        assert.equal(parentClasses.has('has-focused-tile'), true);
+        assert.equal(client.isVideoOnFullScreen, true);
+    });
 });
